@@ -341,54 +341,72 @@ class Snake {
 
     draw(ctx) {
         const currentRadius = this.getCurrentRadius();
+
+        // Performans: Ekran sınırları (view) dışında kalan yılanları komple atla
+        let isAnySegmentVisible = false;
+        for (let i = 0; i < this.segments.length; i++) {
+            const s = this.segments[i];
+            if (s.x >= view.l && s.x <= view.r && s.y >= view.t && s.y <= view.b) {
+                isAnySegmentVisible = true;
+                break;
+            }
+        }
+        if (!isAnySegmentVisible) return;
+
+        // Gövde çizimi
+        ctx.save();
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = this.color;
+        const rgb = this.hexToRgb(this.color);
+
         for (let i = this.segments.length - 1; i >= 0; i--) {
             const seg = this.segments[i];
             if (seg.x < view.l || seg.x > view.r || seg.y < view.t || seg.y > view.b) continue;
             const ratio = 1 - (i / this.segments.length);
             const radius = currentRadius * (0.6 + 0.4 * ratio);
-            ctx.save();
             ctx.beginPath();
             ctx.arc(seg.x, seg.y, radius, 0, Math.PI * 2);
-            ctx.shadowBlur = 12;
-            ctx.shadowColor = this.color;
-            ctx.fillStyle = i === 0 ? this.color : `rgba(${this.hexToRgb(this.color)}, ${0.45 + 0.55 * ratio})`;
+            ctx.fillStyle = i === 0 ? this.color : `rgba(${rgb}, ${0.45 + 0.55 * ratio})`;
             ctx.fill();
-            ctx.restore();
         }
+        ctx.restore();
 
         const head = this.segments[0];
-        ctx.save();
-        ctx.translate(head.x, head.y);
-        ctx.rotate(this.angle);
-        const eyeOffset = currentRadius * 0.45;
-        const eyeRadius = Math.max(2.5, currentRadius * 0.28);
-        const pupilRadius = eyeRadius * 0.45;
+        // Kafa ekranda görünüyorsa gözleri ve ismi çiz
+        if (head.x >= view.l && head.x <= view.r && head.y >= view.t && head.y <= view.b) {
+            ctx.save();
+            ctx.translate(head.x, head.y);
+            ctx.rotate(this.angle);
+            const eyeOffset = currentRadius * 0.45;
+            const eyeRadius = Math.max(2.5, currentRadius * 0.28);
+            const pupilRadius = eyeRadius * 0.45;
 
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(eyeOffset * 0.8, -eyeOffset, eyeRadius, 0, Math.PI * 2);
-        ctx.arc(eyeOffset * 0.8, eyeOffset, eyeRadius, 0, Math.PI * 2);
-        ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(eyeOffset * 0.8, -eyeOffset, eyeRadius, 0, Math.PI * 2);
+            ctx.arc(eyeOffset * 0.8, eyeOffset, eyeRadius, 0, Math.PI * 2);
+            ctx.fill();
 
-        ctx.fillStyle = '#000000';
-        ctx.beginPath();
-        ctx.arc(eyeOffset * 0.9, -eyeOffset, pupilRadius, 0, Math.PI * 2);
-        ctx.arc(eyeOffset * 0.9, eyeOffset, pupilRadius, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            ctx.arc(eyeOffset * 0.9, -eyeOffset, pupilRadius, 0, Math.PI * 2);
+            ctx.arc(eyeOffset * 0.9, eyeOffset, pupilRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
 
-        ctx.save();
-        ctx.font = 'bold 12px Segoe UI';
-        ctx.fillStyle = '#ffffff';
-        ctx.textAlign = 'center';
-        ctx.shadowBlur = 4;
-        ctx.shadowColor = '#000000';
-        ctx.fillText(this.name, head.x, head.y - currentRadius - 8);
-        ctx.restore();
+            ctx.save();
+            ctx.font = 'bold 12px Segoe UI';
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.shadowBlur = 4;
+            ctx.shadowColor = '#000000';
+            ctx.fillText(this.name, head.x, head.y - currentRadius - 8);
+            ctx.restore();
 
-        // Konuşma Balonu Çizimi
-        if (this.chatMessage && this.chatTimer > Date.now()) {
-            this.drawChatBubble(ctx, head.x, head.y - currentRadius - 24);
+            // Konuşma Balonu Çizimi
+            if (this.chatMessage && this.chatTimer > Date.now()) {
+                this.drawChatBubble(ctx, head.x, head.y - currentRadius - 24);
+            }
         }
     }
 
@@ -834,6 +852,7 @@ function drawGrid() {
 }
 
 function drawMiniMap() {
+    if (!gameState.player) return;
     const mapSize = 140;
     const mapX = canvas.width - mapSize - 20;
     const mapY = 20;
@@ -842,11 +861,24 @@ function drawMiniMap() {
     ctx.rect(mapX, mapY, mapSize, mapSize);
     ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
     ctx.fill();
+
     const scale = mapSize / ARENA_WIDTH;
-    for (const food of gameState.foods) {
-        ctx.fillStyle = food.color;
-        ctx.fillRect(mapX + food.x * scale, mapY + food.y * scale, 1.5, 1.5);
+    const px = gameState.player.x;
+    const py = gameState.player.y;
+    const radarFoodRadiusSq = 1200 * 1200; // Sadece oyuncunun etrafındaki 1200px içindeki yemler
+
+    // Sadece yakındaki yemleri radarda göster (uzaktaki yüzlerce yemi çizip kasmayı önler)
+    for (let i = 0; i < gameState.foods.length; i++) {
+        const food = gameState.foods[i];
+        const dx = food.x - px;
+        const dy = food.y - py;
+        if (dx * dx + dy * dy <= radarFoodRadiusSq) {
+            ctx.fillStyle = food.color;
+            ctx.fillRect(mapX + food.x * scale, mapY + food.y * scale, 1.5, 1.5);
+        }
     }
+
+    // Yılanları çiz (yılanlar haritanın neresinde olursa olsun rakip takibi için radar noktası görünür)
     for (const [id, snake] of gameState.snakes) {
         const head = snake.segments[0];
         ctx.beginPath();
