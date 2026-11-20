@@ -536,6 +536,7 @@ const gameState = {
     player: null,
     isGameOver: false,
     isDeadWatching: false,
+    isRespawning: false,
     deathTime: 0,
     deathCameraPos: { x: 2500, y: 2500 },
     roomName: '',
@@ -587,6 +588,7 @@ socket.on('init', ({ id, players, foods, powerUps, arena, isAdmin }) => {
     gameState.player = null;
     gameState.isGameOver = false;
     gameState.isDeadWatching = false;
+    gameState.isRespawning = false;
     gameState.currentCameraScale = 1.0;
     if (deathVignette) deathVignette.classList.add('hidden');
     if (respawnOverlay) respawnOverlay.classList.add('hidden');
@@ -720,12 +722,12 @@ socket.on('playerChat', ({ id, text }) => {
 });
 
 socket.on('connect', () => {
-    if (gameState.isStarted && !gameState.isGameOver && !gameState.isDeadWatching) joinGame();
+    if (gameState.isStarted && !gameState.isGameOver && !gameState.isDeadWatching && !gameState.isRespawning) joinGame();
 });
 
 // Sunucuya pozisyon gönderme
 setInterval(() => {
-    if (gameState.isStarted && gameState.player && !gameState.isGameOver && !gameState.isDeadWatching) {
+    if (gameState.isStarted && gameState.player && !gameState.isGameOver && !gameState.isDeadWatching && !gameState.isRespawning) {
         const segSample = [];
         const step = Math.max(1, Math.floor(gameState.player.segments.length / 50));
         for (let i = 0; i < gameState.player.segments.length; i += step) {
@@ -748,7 +750,7 @@ setInterval(() => {
 
 // Çarpışma ve Güç Kontrolleri
 function checkCollisions() {
-    if (gameState.isGameOver || gameState.isDeadWatching || !gameState.isStarted || !gameState.player) return;
+    if (gameState.isGameOver || gameState.isDeadWatching || gameState.isRespawning || !gameState.isStarted || !gameState.player) return;
 
     const head = gameState.player.segments[0];
     const prevHead = { x: gameState.player.prevX, y: gameState.player.prevY };
@@ -880,25 +882,37 @@ function calculateRespawnDelay() {
     return 7;
 }
 
+let respawnIntervalId = null;
+
 const restartBtn = document.getElementById('restart-btn');
 if (restartBtn) {
     restartBtn.addEventListener('click', () => {
         if (gameOverScreen) gameOverScreen.classList.add('hidden');
         if (deathVignette) deathVignette.classList.add('hidden');
 
-        // Geri sayım sayacını başlat
+        // Sayaca geçerken eski yılan referansını temizle ve respawning durumuna geç
+        gameState.isRespawning = true;
+        gameState.player = null;
+
+        if (respawnIntervalId) {
+            clearInterval(respawnIntervalId);
+            respawnIntervalId = null;
+        }
+
         let secondsLeft = calculateRespawnDelay();
         if (respawnOverlay && respawnTimerNumber) {
             respawnTimerNumber.textContent = secondsLeft;
             respawnOverlay.classList.remove('hidden');
         }
 
-        const countInterval = setInterval(() => {
+        respawnIntervalId = setInterval(() => {
             secondsLeft--;
             if (respawnTimerNumber) respawnTimerNumber.textContent = secondsLeft;
             if (secondsLeft <= 0) {
-                clearInterval(countInterval);
+                clearInterval(respawnIntervalId);
+                respawnIntervalId = null;
                 if (respawnOverlay) respawnOverlay.classList.add('hidden');
+                gameState.isRespawning = false;
                 joinGame();
             }
         }, 1000);
@@ -907,7 +921,7 @@ if (restartBtn) {
 
 // Input Handlers
 function handleInput(clientX, clientY) {
-    if (!gameState.isStarted || !gameState.player || gameState.isGameOver || gameState.isDeadWatching) return;
+    if (!gameState.isStarted || !gameState.player || gameState.isGameOver || gameState.isDeadWatching || gameState.isRespawning) return;
     const centerX = window.innerWidth / 2;
     const centerY = window.innerHeight / 2;
     const dx = clientX - centerX;
@@ -923,7 +937,7 @@ window.addEventListener('mousemove', (e) => {
 
 let lastMouseClickTime = 0;
 window.addEventListener('mousedown', (e) => {
-    if (!gameState.isStarted || gameState.isGameOver || gameState.isDeadWatching || !gameState.player) return;
+    if (!gameState.isStarted || gameState.isGameOver || gameState.isDeadWatching || gameState.isRespawning || !gameState.player) return;
     if (e.target.closest('#emoji-bar') || e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
     const now = Date.now();
     if (now - lastMouseClickTime < 320) {
@@ -940,7 +954,7 @@ window.addEventListener('keydown', (e) => {
 
 let lastTouchTime = 0;
 window.addEventListener('touchstart', (e) => {
-    if (!gameState.isStarted || gameState.isGameOver || gameState.isDeadWatching) return;
+    if (!gameState.isStarted || gameState.isGameOver || gameState.isDeadWatching || gameState.isRespawning) return;
     if (e.target.closest('#emoji-bar') || e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
     const now = Date.now();
     if (now - lastTouchTime < 320 && gameState.player) {
@@ -957,7 +971,7 @@ window.addEventListener('touchstart', (e) => {
 }, { passive: false });
 
 window.addEventListener('touchmove', (e) => {
-    if (!gameState.isStarted || gameState.isGameOver || gameState.isDeadWatching || !gameState.player) return;
+    if (!gameState.isStarted || gameState.isGameOver || gameState.isDeadWatching || gameState.isRespawning || !gameState.player) return;
     if (e.target.closest('#emoji-bar')) return;
     e.preventDefault();
     const touch = e.touches[0];
