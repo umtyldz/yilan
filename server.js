@@ -48,13 +48,15 @@ function spawnFood(customX, customY, customRadius, customColor) {
 const POWER_TYPES = ['magnet', 'ghost', 'titan', 'speed'];
 function spawnPowerUp() {
     const type = POWER_TYPES[Math.floor(Math.random() * POWER_TYPES.length)];
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 2.5 + Math.random() * 1.5;
     return {
         id: 'pw_' + Math.random().toString(36).substr(2, 9),
         type: type,
         x: 200 + Math.random() * (ARENA_WIDTH - 400),
         y: 200 + Math.random() * (ARENA_HEIGHT - 400),
-        vx: (Math.random() - 0.5) * 1.5,
-        vy: (Math.random() - 0.5) * 1.5,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
         radius: 12
     };
 }
@@ -96,27 +98,32 @@ setInterval(() => {
 
         const playersArr = Array.from(room.players.values());
         for (const pw of room.powerUps) {
-            // Yakındaki yılanlardan yavaşça kaçma
+            // Yakındaki yılanlardan çevikçe kaçma (menzil 450px, ivme 0.6)
             for (const p of playersArr) {
                 const dx = pw.x - p.x;
                 const dy = pw.y - p.y;
                 const dist = Math.hypot(dx, dy);
-                if (dist < 320 && dist > 1) {
-                    pw.vx += (dx / dist) * 0.25;
-                    pw.vy += (dy / dist) * 0.25;
+                if (dist < 450 && dist > 1) {
+                    pw.vx += (dx / dist) * 0.65;
+                    pw.vy += (dy / dist) * 0.65;
                 }
             }
 
-            // Hız sınırlama ve sürtünme
+            // Hız sınırlama ve hafif sürtünme (maksimum hız 5.0)
             const spd = Math.hypot(pw.vx, pw.vy);
-            if (spd > 3.0) {
-                pw.vx = (pw.vx / spd) * 3.0;
-                pw.vy = (pw.vy / spd) * 3.0;
+            if (spd > 5.0) {
+                pw.vx = (pw.vx / spd) * 5.0;
+                pw.vy = (pw.vy / spd) * 5.0;
+            } else if (spd < 1.8) {
+                // Asla tamamen durmasın, hep süzülsün
+                const ang = Math.atan2(pw.vy, pw.vx) || (Math.random() * Math.PI * 2);
+                pw.vx = Math.cos(ang) * 2.2;
+                pw.vy = Math.sin(ang) * 2.2;
             }
             pw.x += pw.vx;
             pw.y += pw.vy;
-            pw.vx *= 0.98;
-            pw.vy *= 0.98;
+            pw.vx *= 0.99;
+            pw.vy *= 0.99;
 
             // Duvarlardan sekme
             if (pw.x < 50) { pw.x = 50; pw.vx = Math.abs(pw.vx); }

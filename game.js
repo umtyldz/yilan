@@ -446,12 +446,13 @@ class Snake {
                 ctx.restore();
             }
 
-            // Aktif Güç Geri Sayım Barı
+            // Aktif Güç Geri Sayım Barı ve İsim
             if (this.activePower && this.powerExpires > Date.now()) {
                 const totalDur = { magnet: 10000, ghost: 6000, titan: 8000, speed: 6000 }[this.activePower] || 7000;
                 const rem = Math.max(0, this.powerExpires - Date.now()) / totalDur;
                 const pColor = { magnet: '#ffff00', ghost: '#aa88ff', titan: '#ff3366', speed: '#00ffff' }[this.activePower] || '#fff';
                 const pEmoji = { magnet: '🧲', ghost: '👻', titan: '🍄', speed: '⚡' }[this.activePower] || '⭐';
+                const pTitle = { magnet: 'MIKNATIS', ghost: 'HAYALET', titan: 'TITAN', speed: 'HIZ' }[this.activePower] || '';
 
                 ctx.save();
                 ctx.beginPath();
@@ -460,8 +461,12 @@ class Snake {
                 ctx.lineWidth = 3;
                 ctx.stroke();
 
-                ctx.font = '12px "Segoe UI Emoji", sans-serif';
-                ctx.fillText(pEmoji, head.x, head.y - currentRadius - 20);
+                ctx.font = 'bold 11px Segoe UI';
+                ctx.fillStyle = pColor;
+                ctx.shadowBlur = 4;
+                ctx.shadowColor = '#000';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${pEmoji} ${pTitle}`, head.x, head.y - currentRadius - 22);
                 ctx.restore();
             }
 
@@ -881,7 +886,11 @@ function die(killerId) {
     const finalLen = gameState.player ? gameState.player.segments.length : 15;
     const finalKills = gameState.player ? gameState.player.kills : 0;
 
-    // 3.5 saniye boyunca oyuncu kendi ölümünü ve etrafı izlesin, sonra menü açılsın
+    // Yılan anında yok olsun (yem dökme aynen kalır, kamera ölüm noktasını izlemeye devam eder)
+    gameState.snakes.delete(socket.id);
+    gameState.player = null;
+
+    // 3.5 saniye boyunca oyuncu ölüm noktasını ve etraftaki yemleri izlesin, sonra menü açılsın
     setTimeout(() => {
         if (!gameState.isDeadWatching) return;
         gameState.isDeadWatching = false;
@@ -1248,7 +1257,9 @@ const RANDOM_QUOTES = [
     'YAKARIM!',
     'OLUM BAK GİT!',
     'UZAK DUR!',
-    'KAÇMASANA!'
+    'KAÇMASANA!',
+    'BİP BİP',
+    'SELAMIN ALEYKÜM'
 ];
 
 function initEmojiBar() {
