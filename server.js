@@ -219,6 +219,18 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('sendChat', (payload) => {
+        const roomName = socket.data.room;
+        const room = rooms.get(roomName);
+        if (!room || !room.players.has(socket.id) || !payload) return;
+        const text = String(payload.text || '').slice(0, 30).trim();
+        if (!text) return;
+        io.to(roomName).emit('playerChat', {
+            id: socket.id,
+            text: text
+        });
+    });
+
     socket.on('closeRoom', () => {
         const roomName = socket.data.room;
         const room = rooms.get(roomName);

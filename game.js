@@ -236,6 +236,10 @@ class Snake {
         this.boostTimer = 0;
         this.boostCooldown = 0;
 
+        // Chat ve Konuşma Balonu
+        this.chatMessage = '';
+        this.chatTimer = 0;
+
         const initialLength = 15;
         for (let i = 0; i < initialLength; i++) {
             this.segments.push({ x: this.x - i * this.segmentSpacing, y: this.y });
@@ -381,6 +385,57 @@ class Snake {
         ctx.shadowColor = '#000000';
         ctx.fillText(this.name, head.x, head.y - currentRadius - 8);
         ctx.restore();
+
+        // Konuşma Balonu Çizimi
+        if (this.chatMessage && this.chatTimer > Date.now()) {
+            this.drawChatBubble(ctx, head.x, head.y - currentRadius - 24);
+        }
+    }
+
+    drawChatBubble(ctx, x, y) {
+        ctx.save();
+        ctx.font = 'bold 14px "Segoe UI Emoji", "Apple Color Emoji", Segoe UI, sans-serif';
+        const metrics = ctx.measureText(this.chatMessage);
+        const paddingX = 10;
+        const paddingY = 6;
+        const bubbleW = Math.max(34, metrics.width + paddingX * 2);
+        const bubbleH = 26;
+        const bx = x - bubbleW / 2;
+        const by = y - bubbleH;
+        const radius = 8;
+
+        // Balon gövdesi
+        ctx.beginPath();
+        ctx.moveTo(bx + radius, by);
+        ctx.lineTo(bx + bubbleW - radius, by);
+        ctx.quadraticCurveTo(bx + bubbleW, by, bx + bubbleW, by + radius);
+        ctx.lineTo(bx + bubbleW, by + bubbleH - radius);
+        ctx.quadraticCurveTo(bx + bubbleW, by + bubbleH, bx + bubbleW - radius, by + bubbleH);
+        // Kuyruk çıkıntısı
+        ctx.lineTo(x + 5, by + bubbleH);
+        ctx.lineTo(x, by + bubbleH + 6);
+        ctx.lineTo(x - 5, by + bubbleH);
+        ctx.lineTo(bx + radius, by + bubbleH);
+        ctx.quadraticCurveTo(bx, by + bubbleH, bx, by + bubbleH - radius);
+        ctx.lineTo(bx, by + radius);
+        ctx.quadraticCurveTo(bx, by, bx + radius, by);
+        ctx.closePath();
+
+        ctx.fillStyle = 'rgba(25, 25, 35, 0.94)';
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = this.color;
+        ctx.fill();
+
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = this.color;
+        ctx.stroke();
+
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(this.chatMessage, x, by + bubbleH / 2);
+        ctx.restore();
     }
 
     hexToRgb(hex) {
@@ -467,6 +522,8 @@ socket.on('init', ({ id, players, foods, arena, isAdmin }) => {
 
     const startScreen = document.getElementById('start-screen');
     if (startScreen) startScreen.style.display = 'none';
+    const emojiBar = document.getElementById('emoji-bar');
+    if (emojiBar) emojiBar.classList.remove('hidden');
     gameState.isStarted = true;
 });
 
@@ -532,6 +589,14 @@ socket.on('roomClosed', () => {
 closeRoomBtn.addEventListener('click', () => {
     if (gameState.isAdmin) {
         socket.emit('closeRoom', gameState.roomName);
+    }
+});
+
+socket.on('playerChat', ({ id, text }) => {
+    const s = gameState.snakes.get(id);
+    if (s) {
+        s.chatMessage = text;
+        s.chatTimer = Date.now() + 3500;
     }
 });
 
@@ -636,6 +701,8 @@ function die() {
     if (finalScoreEl && gameState.player) finalScoreEl.textContent = gameState.player.segments.length;
     const gameOverScreen = document.getElementById('game-over-screen');
     if (gameOverScreen) gameOverScreen.classList.remove('hidden');
+    const emojiBar = document.getElementById('emoji-bar');
+    if (emojiBar) emojiBar.classList.add('hidden');
 }
 
 const restartBtn = document.getElementById('restart-btn');
@@ -786,6 +853,17 @@ function drawMiniMap() {
         ctx.arc(mapX + head.x * scale, mapY + head.y * scale, snake.isPlayer ? 3 : 2, 0, Math.PI * 2);
         ctx.fillStyle = snake.color;
         ctx.fill();
+
+        // Konuşan oyuncu için minimapte yanıp sönen konuşma balonu efekti
+        if (snake.chatMessage && snake.chatTimer > Date.now()) {
+            const pulse = (Math.sin(Date.now() / 150) + 1) / 2;
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(mapX + head.x * scale, mapY + head.y * scale - 4, 3 + pulse * 2, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 255, 255, ${0.4 + pulse * 0.6})`;
+            ctx.fill();
+            ctx.restore();
+        }
     }
     ctx.restore();
 }
@@ -868,6 +946,62 @@ function draw() {
         updateLeaderboard();
     }
 }
+
+// --- EMOJİ SOHET VE RANDOM REPLİKLER ---
+const EMOJI_LIST = [
+    '😎', '😈', '🔥', '💀', '😱', '😂', '👋', '👀', '🐍', '🚀',
+    '⚡', '👑', '💥', '👻', '🍕', '🎉', '😡', '🤔', '🏆', '🥶',
+    '🤯', '🤪', '🤫', '💩', '💯', '🦾', '💣', '🛡️', '⚔️', '🎯',
+    '🍿', '🍭', '🌮', '🍔', '👽', '🤖', '👾', '🎃', '💎', '⭐',
+    '🌟', '✨', '🎈', '🎵', '🚨', '⛔', '💤', '🥳', '🤠', '🪄'
+];
+
+const RANDOM_QUOTES = [
+    'OLLEEEY!',
+    'VAAAY!',
+    'YAKLAŞMAYIN!',
+    'YAKARIM!',
+    'OLUM BAK GİT!',
+    'UZAK DUR!',
+    'KAÇMASANA!'
+];
+
+function initEmojiBar() {
+    const bar = document.getElementById('emoji-bar');
+    if (!bar) return;
+    bar.innerHTML = '';
+    EMOJI_LIST.forEach(emoji => {
+        const btn = document.createElement('button');
+        btn.className = 'emoji-btn';
+        btn.textContent = emoji;
+        btn.type = 'button';
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            sendChatMessage(emoji);
+        });
+        bar.appendChild(btn);
+    });
+}
+initEmojiBar();
+
+function sendChatMessage(text) {
+    if (!gameState.isStarted || gameState.isGameOver || !gameState.player) return;
+    socket.emit('sendChat', { text: text });
+}
+
+// 30 saniye civarında rastgele eğlenceli replik çıkarma döngüsü
+function scheduleNextRandomQuote() {
+    // 22 ile 38 saniye arasında rastgele zamanlama (~30sn)
+    const delay = 22000 + Math.random() * 16000;
+    setTimeout(() => {
+        if (gameState.isStarted && !gameState.isGameOver && gameState.player) {
+            const quote = RANDOM_QUOTES[Math.floor(Math.random() * RANDOM_QUOTES.length)];
+            sendChatMessage(quote);
+        }
+        scheduleNextRandomQuote();
+    }, delay);
+}
+scheduleNextRandomQuote();
 
 function loop() {
     update();

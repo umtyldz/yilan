@@ -279,3 +279,58 @@ body, html {
 #restart-btn:active {
     transform: scale(0.95);
 }
+
+/* Emoji Bar */
+#emoji-bar {
+    position: fixed;
+    bottom: 15px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 90%;
+    max-width: 650px;
+    background: rgba(18, 18, 26, 0.88);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(0, 255, 204, 0.35);
+    border-radius: 30px;
+    padding: 6px 14px;
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    z-index: 50;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 255, 204, 0.4) transparent;
+}
+
+#emoji-bar::-webkit-scrollbar {
+    height: 4px;
+}
+
+#emoji-bar::-webkit-scrollbar-thumb {
+    background: rgba(0, 255, 204, 0.4);
+    border-radius: 4px;
+}
+
+.emoji-btn {
+    background: transparent;
+    border: none;
+    font-size: 22px;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 50%;
+    transition: transform 0.15s, background 0.15s;
+    user-select: none;
+    -webkit-user-select: none;
+    flex-shrink: 0;
+}
+
+.emoji-btn:hover {
+    transform: scale(1.28);
+    background: rgba(0, 255, 204, 0.2);
+}
+
+.emoji-btn:active {
+    transform: scale(0.95);
+}
