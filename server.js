@@ -36,13 +36,13 @@ function isNum(n) {
     return typeof n === 'number' && Number.isFinite(n);
 }
 
-function spawnFood() {
+function spawnFood(customX, customY, customRadius, customColor) {
     return {
         id: Math.random().toString(36).substr(2, 9),
-        x: Math.random() * (ARENA_WIDTH - 100) + 50,
-        y: Math.random() * (ARENA_HEIGHT - 100) + 50,
-        radius: 5 + Math.random() * 3,
-        color: ['#ff3366', '#33ff66', '#3366ff', '#ffff33', '#ff33ff', '#33ffff', '#ff9933'][Math.floor(Math.random() * 7)]
+        x: customX !== undefined ? customX : Math.random() * (ARENA_WIDTH - 100) + 50,
+        y: customY !== undefined ? customY : Math.random() * (ARENA_HEIGHT - 100) + 50,
+        radius: customRadius !== undefined ? customRadius : 4 + Math.random() * 2.5,
+        color: customColor || ['#ff3366', '#33ff66', '#3366ff', '#ffff33', '#ff33ff', '#33ffff', '#ff9933'][Math.floor(Math.random() * 7)]
     };
 }
 
@@ -138,8 +138,26 @@ io.on('connection', (socket) => {
         if (isNum(data.angle)) player.angle = data.angle;
         if (isNum(data.length)) player.length = Math.max(1, Math.min(MAX_LENGTH, Math.floor(data.length)));
         player.isBoosting = data.isBoosting === true;
+        if (Array.isArray(data.segments)) {
+            player.segments = data.segments.slice(0, 300);
+        }
 
         socket.to(socket.data.room).emit('playerUpdated', player);
+    });
+
+    socket.on('dropFood', (payload) => {
+        const roomName = socket.data.room;
+        const room = rooms.get(roomName);
+        if (!room || !room.players.has(socket.id) || !payload) return;
+        const x = Number(payload.x);
+        const y = Number(payload.y);
+        if (!isNum(x) || !isNum(y)) return;
+        if (x < 0 || x > ARENA_WIDTH || y < 0 || y > ARENA_HEIGHT) return;
+
+        const color = COLOR_RE.test(payload.color) ? payload.color : '#00ffcc';
+        const food = spawnFood(x, y, 4, color);
+        room.foods.push(food);
+        io.to(roomName).emit('foodsAdded', [food]);
     });
 
     socket.on('foodEaten', ({ foodId } = {}) => {
@@ -160,12 +178,38 @@ io.on('connection', (socket) => {
         io.to(roomName).emit('foodUpdate', { eatenId: foodId, newFood: newFood });
     });
 
-    socket.on('playerDied', () => {
+    socket.on('playerDied', (payload) => {
         const roomName = socket.data.room;
         const room = rooms.get(roomName);
         if (room && room.players.has(socket.id)) {
+            const player = room.players.get(socket.id);
             room.players.delete(socket.id); // ölen oyuncu artık yeni girenlere gönderilmez
             socket.to(roomName).emit('playerRemoved', socket.id);
+
+            // Ölen yılanın segmentleri üzerinden yem saçma
+            if (payload && Array.isArray(payload.drops) && payload.drops.length > 0) {
+                const added = [];
+                const color = player.color || '#ff3366';
+                const limit = Math.min(payload.drops.length, 120);
+                for (let i = 0; i < limit; i++) {
+                    const d = payload.drops[i];
+                    if (d && isNum(d.x) && isNum(d.y)) {
+                        const jitterX = d.x + (Math.random() - 0.5) * 20;
+                        const jitterY = d.y + (Math.random() - 0.5) * 20;
+                        const fd = spawnFood(
+                            Math.max(20, Math.min(ARENA_WIDTH - 20, jitterX)),
+                            Math.max(20, Math.min(ARENA_HEIGHT - 20, jitterY)),
+                            5 + Math.random() * 3,
+                            color
+                        );
+                        room.foods.push(fd);
+                        added.push(fd);
+                    }
+                }
+                if (added.length > 0) {
+                    io.to(roomName).emit('foodsAdded', added);
+                }
+            }
         }
     });
 
