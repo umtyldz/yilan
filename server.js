@@ -9,7 +9,6 @@ const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
 
-// Sadece istemci dosyalarını yayınla (server.js, package.json, .git, yedek/ gizli kalır)
 const PUBLIC_FILES = ['index.html', 'game.js', 'style.css'];
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 PUBLIC_FILES.forEach((file) => {
@@ -46,6 +45,20 @@ function spawnFood(customX, customY, customRadius, customColor) {
     };
 }
 
+const POWER_TYPES = ['magnet', 'ghost', 'titan', 'speed'];
+function spawnPowerUp() {
+    const type = POWER_TYPES[Math.floor(Math.random() * POWER_TYPES.length)];
+    return {
+        id: 'pw_' + Math.random().toString(36).substr(2, 9),
+        type: type,
+        x: 200 + Math.random() * (ARENA_WIDTH - 400),
+        y: 200 + Math.random() * (ARENA_HEIGHT - 400),
+        vx: (Math.random() - 0.5) * 1.5,
+        vy: (Math.random() - 0.5) * 1.5,
+        radius: 12
+    };
+}
+
 function leaveRoom(socket) {
     const roomName = socket.data.room;
     if (!roomName) return;
@@ -67,13 +80,56 @@ function leaveRoom(socket) {
         } else if (!roomSockets || roomSockets.size === 0) {
             rooms.delete(roomName);
         } else {
-            room.adminId = null; // oda boş, ilk giren yeniden admin olur
+            room.adminId = null;
         }
     }
 }
 
+// Power-up hareket döngüsü (kaçış fiziği)
+setInterval(() => {
+    rooms.forEach((room, roomName) => {
+        if (!room.powerUps) room.powerUps = [];
+        // Maksimum 3 güç küresi
+        while (room.powerUps.length < 3) {
+            room.powerUps.push(spawnPowerUp());
+        }
+
+        const playersArr = Array.from(room.players.values());
+        for (const pw of room.powerUps) {
+            // Yakındaki yılanlardan yavaşça kaçma
+            for (const p of playersArr) {
+                const dx = pw.x - p.x;
+                const dy = pw.y - p.y;
+                const dist = Math.hypot(dx, dy);
+                if (dist < 320 && dist > 1) {
+                    pw.vx += (dx / dist) * 0.25;
+                    pw.vy += (dy / dist) * 0.25;
+                }
+            }
+
+            // Hız sınırlama ve sürtünme
+            const spd = Math.hypot(pw.vx, pw.vy);
+            if (spd > 3.0) {
+                pw.vx = (pw.vx / spd) * 3.0;
+                pw.vy = (pw.vy / spd) * 3.0;
+            }
+            pw.x += pw.vx;
+            pw.y += pw.vy;
+            pw.vx *= 0.98;
+            pw.vy *= 0.98;
+
+            // Duvarlardan sekme
+            if (pw.x < 50) { pw.x = 50; pw.vx = Math.abs(pw.vx); }
+            if (pw.x > ARENA_WIDTH - 50) { pw.x = ARENA_WIDTH - 50; pw.vx = -Math.abs(pw.vx); }
+            if (pw.y < 50) { pw.y = 50; pw.vy = Math.abs(pw.vy); }
+            if (pw.y > ARENA_HEIGHT - 50) { pw.y = ARENA_HEIGHT - 50; pw.vy = -Math.abs(pw.vy); }
+        }
+
+        io.to(roomName).emit('powerUpsSync', room.powerUps);
+    });
+}, 100);
+
 io.on('connection', (socket) => {
-    console.log('Bir kullanıcı bağlandı:', socket.id);
     socket.data.room = null;
 
     socket.on('joinRoom', (payload) => {
@@ -83,7 +139,6 @@ io.on('connection', (socket) => {
         const color = COLOR_RE.test(payload.color) ? payload.color : '#00ffcc';
         if (!roomName) return;
 
-        // Daha önce bir odadaysa (ör. ölüp tekrar oynuyorsa) önce çık
         leaveRoom(socket);
 
         socket.join(roomName);
@@ -94,7 +149,8 @@ io.on('connection', (socket) => {
                 name: roomName,
                 adminId: socket.id,
                 players: new Map(),
-                foods: Array.from({ length: 400 }, () => spawnFood())
+                foods: Array.from({ length: 400 }, () => spawnFood()),
+                powerUps: [spawnPowerUp(), spawnPowerUp(), spawnPowerUp()]
             });
         }
 
@@ -111,6 +167,10 @@ io.on('connection', (socket) => {
             angle: 0,
             length: INITIAL_LENGTH,
             isBoosting: false,
+            kills: 0,
+            activePower: null,
+            powerExpires: 0,
+            shieldUntil: Date.now() + 3000,
             isAdmin: isAdmin
         };
 
@@ -120,6 +180,7 @@ io.on('connection', (socket) => {
             id: socket.id,
             players: Array.from(room.players.values()),
             foods: room.foods,
+            powerUps: room.powerUps,
             arena: { width: ARENA_WIDTH, height: ARENA_HEIGHT },
             isAdmin: isAdmin
         });
@@ -132,7 +193,6 @@ io.on('connection', (socket) => {
         if (!room || !room.players.has(socket.id) || !data || typeof data !== 'object') return;
 
         const player = room.players.get(socket.id);
-        // Sadece izin verilen alanları, doğrulayarak kabul et
         if (isNum(data.x)) player.x = Math.max(0, Math.min(ARENA_WIDTH, data.x));
         if (isNum(data.y)) player.y = Math.max(0, Math.min(ARENA_HEIGHT, data.y));
         if (isNum(data.angle)) player.angle = data.angle;
@@ -170,10 +230,10 @@ io.on('connection', (socket) => {
 
         const player = room.players.get(socket.id);
         const foodIndex = room.foods.findIndex((f) => f.id === foodId);
-        if (foodIndex === -1) return; // zaten yenmiş: tekrar sayılmaz
+        if (foodIndex === -1) return;
 
         const food = room.foods[foodIndex];
-        if (Math.hypot(food.x - player.x, food.y - player.y) > 200) return; // çok uzaktan yeme = hile
+        if (Math.hypot(food.x - player.x, food.y - player.y) > 350) return;
 
         room.foods.splice(foodIndex, 1);
         const newFood = spawnFood();
@@ -181,12 +241,60 @@ io.on('connection', (socket) => {
         io.to(roomName).emit('foodUpdate', { eatenId: foodId, newFood: newFood });
     });
 
+    socket.on('powerUpCollected', ({ powerId } = {}) => {
+        const roomName = socket.data.room;
+        const room = rooms.get(roomName);
+        if (!room || !room.players.has(socket.id) || !room.powerUps) return;
+
+        const player = room.players.get(socket.id);
+        const index = room.powerUps.findIndex(p => p.id === powerId);
+        if (index === -1) return;
+
+        const pw = room.powerUps[index];
+        if (Math.hypot(pw.x - player.x, pw.y - player.y) > 150) return;
+
+        room.powerUps.splice(index, 1);
+        const durations = { magnet: 10000, ghost: 6000, titan: 8000, speed: 6000 };
+        const duration = durations[pw.type] || 7000;
+
+        player.activePower = pw.type;
+        player.powerExpires = Date.now() + duration;
+
+        io.to(roomName).emit('playerPowerApplied', {
+            id: socket.id,
+            powerType: pw.type,
+            duration: duration
+        });
+
+        // Yeni bir güç küresi doğur
+        setTimeout(() => {
+            if (room && room.powerUps && room.powerUps.length < 3) {
+                room.powerUps.push(spawnPowerUp());
+            }
+        }, 3000);
+    });
+
     socket.on('playerDied', (payload) => {
         const roomName = socket.data.room;
         const room = rooms.get(roomName);
         if (room && room.players.has(socket.id)) {
             const player = room.players.get(socket.id);
-            room.players.delete(socket.id); // ölen oyuncu artık yeni girenlere gönderilmez
+            const killerId = payload ? payload.killerId : null;
+
+            // Avcı skoru artışı (öldüren kişiye +1)
+            if (killerId && room.players.has(killerId)) {
+                const killer = room.players.get(killerId);
+                killer.kills = (killer.kills || 0) + 1;
+                io.to(roomName).emit('killRecorded', {
+                    killerId: killer.id,
+                    killerName: killer.name,
+                    victimId: player.id,
+                    victimName: player.name,
+                    killerKills: killer.kills
+                });
+            }
+
+            room.players.delete(socket.id);
             socket.to(roomName).emit('playerRemoved', socket.id);
 
             // Ölen yılanın segmentleri üzerinden yem saçma

@@ -39,7 +39,7 @@
 
     <div id="score-board">
         <div>Oyuncu: <span id="player-name-display">Yılan</span></div>
-        <div>Skor: <span id="score">15</span></div>
+        <div>Skor: <span id="score">15</span> | Av: <span id="kills-display" style="color: #ff3366;">0 💀</span></div>
         <div style="margin-top: 6px;">
             <button id="sound-toggle-btn" style="background: rgba(255,255,255,0.15); color: #00ffcc; border: 1px solid rgba(0,255,204,0.4); padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; pointer-events: auto;">Ses: AÇIK</button>
         </div>
@@ -51,10 +51,19 @@
             <ol id="leaderboard-list"></ol>
         </div>
     </div>
+    <div id="death-vignette" class="hidden"></div>
+    <div id="respawn-overlay" class="hidden">
+        <div class="respawn-content">
+            <div class="respawn-label">YENİDEN DOĞULUYOR</div>
+            <div id="respawn-timer-number">5</div>
+            <div id="respawn-hint">Avcı skoru arttıkça bekleme süren kısalır!</div>
+        </div>
+    </div>
     <div id="game-over-screen" class="hidden">
         <div class="game-over-content">
             <h1>ÖLDÜN!</h1>
             <p>Skorun: <span id="final-score">15</span></p>
+            <p style="font-size: 16px; color: #ff3366; margin-top: -15px; margin-bottom: 20px;">Toplam Av: <span id="final-kills">0</span> 💀</p>
             <button id="restart-btn">Tekrar Oyna</button>
         </div>
     </div>
