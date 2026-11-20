@@ -96,6 +96,15 @@ class Snake {
         }
     }
 
+    setLength(n) {
+        n = Math.max(1, Math.min(Math.floor(n) || 1, 2000));
+        while (this.segments.length < n) {
+            const t = this.segments[this.segments.length - 1];
+            this.segments.push({ x: t.x, y: t.y });
+        }
+        while (this.segments.length > n) this.segments.pop();
+    }
+
     triggerBoost() {
         if (!this.isBoosting && this.boostCooldown <= 0 && this.segments.length > 15) {
             this.isBoosting = true;
@@ -164,6 +173,7 @@ class Snake {
         const currentRadius = this.baseRadius + Math.min(this.segments.length * 0.05, 6);
         for (let i = this.segments.length - 1; i >= 0; i--) {
             const seg = this.segments[i];
+            if (seg.x < view.l || seg.x > view.r || seg.y < view.t || seg.y > view.b) continue;
             const ratio = 1 - (i / this.segments.length);
             const radius = currentRadius * (0.6 + 0.4 * ratio);
             ctx.save();
@@ -208,6 +218,8 @@ class Snake {
     }
 }
 
+const view = { l: 0, t: 0, r: 0, b: 0 };
+
 const gameState = {
     isStarted: false,
     snakes: new Map(),
@@ -225,6 +237,11 @@ const gameState = {
 };
 
 // Start Game
+let joinInfo = null;
+function joinGame() {
+    if (joinInfo) socket.emit('joinRoom', joinInfo);
+}
+
 const startBtn = document.getElementById('start-btn');
 if (startBtn) {
     startBtn.addEventListener('click', () => {
@@ -239,7 +256,8 @@ if (startBtn) {
         const finalName = `${w1} ${w2}`;
 
         gameState.roomName = room;
-        socket.emit('joinRoom', { roomName: room, playerName: finalName, color: selectedSnakeColor });
+        joinInfo = { roomName: room, playerName: finalName, color: selectedSnakeColor };
+        joinGame();
 
         localStorage.setItem('slither_username', finalName);
         localStorage.setItem('slither_color', selectedSnakeColor);
@@ -249,13 +267,22 @@ if (startBtn) {
 socket.on('init', ({ id, players, foods, arena, isAdmin }) => {
     ARENA_WIDTH = arena.width;
     ARENA_HEIGHT = arena.height;
+    // Temiz başlangıç (yeniden oynama / yeniden bağlanma için)
+    gameState.snakes.clear();
+    gameState.player = null;
+    gameState.isGameOver = false;
+    gameState.spawnProtectUntil = Date.now() + 2500;
+    const goScreen = document.getElementById('game-over-screen');
+    if (goScreen) goScreen.classList.add('hidden');
     gameState.isAdmin = isAdmin;
-    if (isAdmin) adminControls.classList.remove('hidden');
+    adminControls.classList.toggle('hidden', !isAdmin);
 
-    foods.forEach(f => gameState.foods.push(f));
+    gameState.foods = foods.slice();
 
     players.forEach(p => {
         const s = new Snake(p.id, p.x, p.y, p.id === id, p.color, p.name);
+        s.setLength(p.length || 15);
+        s.angle = s.targetAngle = p.angle || 0;
         gameState.snakes.set(p.id, s);
         if (p.id === id) {
             gameState.player = s;
@@ -271,6 +298,7 @@ socket.on('init', ({ id, players, foods, arena, isAdmin }) => {
 
 socket.on('playerJoined', (p) => {
     const s = new Snake(p.id, p.x, p.y, false, p.color, p.name);
+    s.setLength(p.length || 15);
     gameState.snakes.set(p.id, s);
 });
 
@@ -280,10 +308,15 @@ socket.on('playerUpdated', (p) => {
         // Interpolation or direct sync
         s.targetAngle = p.angle;
         s.isBoosting = p.isBoosting;
-        // For simplicity, direct sync segments if needed, but here we just follow targetAngle
-        if (Math.hypot(s.x - p.x, s.y - p.y) > 50) {
+        s.setLength(p.length || s.segments.length);
+        const d = Math.hypot(s.x - p.x, s.y - p.y);
+        if (d > 150) {
             s.x = p.x;
             s.y = p.y;
+            s.segments.forEach(seg => { seg.x = p.x; seg.y = p.y; });
+        } else if (d > 2) {
+            s.x += (p.x - s.x) * 0.2;
+            s.y += (p.y - s.y) * 0.2;
         }
     }
 });
@@ -294,9 +327,8 @@ socket.on('playerRemoved', (id) => {
 
 socket.on('foodUpdate', ({ eatenId, newFood }) => {
     const index = gameState.foods.findIndex(f => f.id === eatenId);
-    if (index !== -1) {
-        gameState.foods[index] = newFood;
-    }
+    if (index !== -1) gameState.foods.splice(index, 1);
+    gameState.foods.push(newFood);
 });
 
 socket.on('makeAdmin', () => {
@@ -315,6 +347,11 @@ closeRoomBtn.addEventListener('click', () => {
     }
 });
 
+// Bağlantı koptuysa (ör. Render uyku/yeniden başlatma) otomatik yeniden katıl
+socket.on('connect', () => {
+    if (gameState.isStarted && !gameState.isGameOver) joinGame();
+});
+
 // Position updates to server
 setInterval(() => {
     if (gameState.isStarted && gameState.player) {
@@ -324,7 +361,8 @@ setInterval(() => {
                 x: gameState.player.x,
                 y: gameState.player.y,
                 angle: gameState.player.angle,
-                isBoosting: gameState.player.isBoosting
+                isBoosting: gameState.player.isBoosting,
+                length: gameState.player.segments.length
             }
         });
     }
@@ -337,14 +375,17 @@ function checkCollisions() {
     const currentRadius = gameState.player.baseRadius + Math.min(gameState.player.segments.length * 0.05, 6);
 
     // Wall collision
-    const margin = 15;
+    // (Yılan kenardan en fazla 20px içeri girebildiği için eşik 20 olmalı)
+    const margin = 20;
     if (head.x <= margin || head.x >= ARENA_WIDTH - margin || head.y <= margin || head.y >= ARENA_HEIGHT - margin) {
         die();
+        return;
     }
 
-    // Other snakes collision
+    // Other snakes collision (doğma sonrası kısa koruma süresi var)
+    const protectedNow = Date.now() < (gameState.spawnProtectUntil || 0);
     for (const [id, snake] of gameState.snakes) {
-        if (id === socket.id) continue;
+        if (id === socket.id || protectedNow) continue;
         for (const seg of snake.segments) {
             const dist = Math.hypot(head.x - seg.x, head.y - seg.y);
             if (dist < currentRadius + 5) {
@@ -355,10 +396,11 @@ function checkCollisions() {
     }
 
     // Food collision
-    for (let i = 0; i < gameState.foods.length; i++) {
+    for (let i = gameState.foods.length - 1; i >= 0; i--) {
         const food = gameState.foods[i];
         const dist = Math.hypot(head.x - food.x, head.y - food.y);
         if (dist < currentRadius + food.radius) {
+            gameState.foods.splice(i, 1); // hemen kaldır: aynı yem tekrar sayılmasın
             socket.emit('foodEaten', { roomName: gameState.roomName, foodId: food.id });
             const tail = gameState.player.segments[gameState.player.segments.length - 1];
             gameState.player.segments.push({ x: tail.x, y: tail.y });
@@ -368,6 +410,7 @@ function checkCollisions() {
 }
 
 function die() {
+    if (gameState.isGameOver) return;
     gameState.isGameOver = true;
     socket.emit('playerDied', { roomName: gameState.roomName });
     const finalScoreEl = document.getElementById('final-score');
@@ -379,7 +422,7 @@ function die() {
 const restartBtn = document.getElementById('restart-btn');
 if (restartBtn) {
     restartBtn.addEventListener('click', () => {
-        location.reload();
+        joinGame(); // sayfayı yenilemeden aynı odaya tekrar katıl
     });
 }
 
@@ -399,9 +442,13 @@ window.addEventListener('mousemove', (e) => {
     handleInput(e.clientX, e.clientY);
 });
 
-// Mobile Touch & Joystick
+// Mobile Touch & Joystick (çift dokunma = boost)
+let lastTouchTime = 0;
 window.addEventListener('touchstart', (e) => {
     if (!gameState.isStarted || gameState.isGameOver) return;
+    const now = Date.now();
+    if (now - lastTouchTime < 300 && gameState.player) gameState.player.triggerBoost();
+    lastTouchTime = now;
     const touch = e.touches[0];
     gameState.input.joystick.active = true;
     gameState.input.joystick.startX = touch.clientX;
@@ -412,7 +459,7 @@ window.addEventListener('touchstart', (e) => {
 }, { passive: false });
 
 window.addEventListener('touchmove', (e) => {
-    if (!gameState.isStarted || gameState.isGameOver) return;
+    if (!gameState.isStarted || gameState.isGameOver || !gameState.player) return;
     e.preventDefault(); // Stop mobile scroll
     const touch = e.touches[0];
     if (gameState.input.joystick.active) {
@@ -431,15 +478,6 @@ window.addEventListener('touchend', () => {
     gameState.input.joystick.active = false;
 });
 
-// Double tap for boost on mobile
-let lastTouchTime = 0;
-window.addEventListener('touchstart', (e) => {
-    const now = Date.now();
-    if (now - lastTouchTime < 300) {
-        if (gameState.player) gameState.player.triggerBoost();
-    }
-    lastTouchTime = now;
-}, { passive: false });
 
 function drawJoystick() {
     const j = gameState.input.joystick;
@@ -512,21 +550,36 @@ function drawMiniMap() {
     ctx.restore();
 }
 
+let lastLeaderboardUpdate = 0;
 function updateLeaderboard() {
+    const now = performance.now();
+    if (now - lastLeaderboardUpdate < 300) return;
+    lastLeaderboardUpdate = now;
     const listEl = document.getElementById('leaderboard-list');
     if (!listEl) return;
     const sorted = Array.from(gameState.snakes.values()).sort((a, b) => b.segments.length - a.segments.length);
-    let html = '';
+    listEl.textContent = '';
     for (let i = 0; i < Math.min(sorted.length, 5); i++) {
-        const s = sorted[i];
-        html += `<li class="${s.isPlayer ? 'player-row' : ''}"><span>${i + 1}. ${s.name}</span><span>${s.segments.length}</span></li>`;
+        const sn = sorted[i];
+        const li = document.createElement('li');
+        if (sn.isPlayer) li.className = 'player-row';
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = `${i + 1}. ${sn.name}`;
+        const scoreSpan = document.createElement('span');
+        scoreSpan.textContent = sn.segments.length;
+        li.appendChild(nameSpan);
+        li.appendChild(scoreSpan);
+        listEl.appendChild(li);
     }
-    listEl.innerHTML = html;
 }
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!gameState.player) return;
+    view.l = gameState.player.x - canvas.width / 2 - 60;
+    view.r = gameState.player.x + canvas.width / 2 + 60;
+    view.t = gameState.player.y - canvas.height / 2 - 60;
+    view.b = gameState.player.y + canvas.height / 2 + 60;
     ctx.save();
     ctx.translate(canvas.width / 2 - gameState.player.x, canvas.height / 2 - gameState.player.y);
     drawGrid();
@@ -534,6 +587,7 @@ function draw() {
     ctx.lineWidth = 12;
     ctx.strokeRect(0, 0, ARENA_WIDTH, ARENA_HEIGHT);
     for (const food of gameState.foods) {
+        if (food.x < view.l || food.x > view.r || food.y < view.t || food.y > view.b) continue;
         ctx.beginPath();
         ctx.arc(food.x, food.y, food.radius, 0, Math.PI * 2);
         ctx.fillStyle = food.color;
