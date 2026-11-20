@@ -156,7 +156,12 @@ function initUsernameInputs() {
     try {
         const urlParams = new URLSearchParams(window.location.search);
         const roomParam = urlParams.get('oda') || urlParams.get('room');
-        if (roomParam && roomInput) roomInput.value = roomParam.trim();
+        if (roomParam && roomInput) {
+            roomInput.value = roomParam.trim();
+        } else {
+            const savedRoom = localStorage.getItem('slither_room');
+            if (savedRoom && roomInput) roomInput.value = savedRoom;
+        }
     } catch (e) {}
 
     const savedName = localStorage.getItem('slither_username');
@@ -602,6 +607,7 @@ if (startBtn) {
 
         localStorage.setItem('slither_username', finalName);
         localStorage.setItem('slither_color', selectedSnakeColor);
+        localStorage.setItem('slither_room', room);
     });
 }
 
