@@ -574,7 +574,31 @@ if (startBtn) {
 
         gameState.roomName = room;
         joinInfo = { roomName: room, playerName: finalName, color: selectedSnakeColor };
-        joinGame();
+        
+        // İlk girişte geri sayım sayacı
+        gameState.isRespawning = true;
+        gameState.player = null;
+        const startScreen = document.getElementById('start-screen');
+        if (startScreen) startScreen.style.display = 'none';
+
+        let secondsLeft = 5;
+        if (respawnOverlay && respawnTimerNumber) {
+            respawnTimerNumber.textContent = secondsLeft;
+            respawnOverlay.classList.remove('hidden');
+        }
+
+        if (respawnIntervalId) clearInterval(respawnIntervalId);
+        respawnIntervalId = setInterval(() => {
+            secondsLeft--;
+            if (respawnTimerNumber) respawnTimerNumber.textContent = secondsLeft;
+            if (secondsLeft <= 0) {
+                clearInterval(respawnIntervalId);
+                respawnIntervalId = null;
+                if (respawnOverlay) respawnOverlay.classList.add('hidden');
+                gameState.isRespawning = false;
+                joinGame();
+            }
+        }, 1000);
 
         localStorage.setItem('slither_username', finalName);
         localStorage.setItem('slither_color', selectedSnakeColor);

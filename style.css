@@ -218,6 +218,10 @@ body, html {
     font-weight: bold;
 }
 
+.hidden {
+    display: none !important;
+}
+
 #game-over-screen {
     position: absolute;
     top: 0;
