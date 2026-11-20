@@ -58,6 +58,18 @@ function initUsernameInputs() {
 }
 
 let selectedSnakeColor = '#00ffcc';
+const startScreenEl = document.getElementById('start-screen');
+
+function updateStartScreenBackground(hex) {
+    if (!startScreenEl) return;
+    const match = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    if (!match) return;
+    const r = Math.round(parseInt(match[1], 16) * 0.2);
+    const g = Math.round(parseInt(match[2], 16) * 0.2);
+    const b = Math.round(parseInt(match[3], 16) * 0.2);
+    startScreenEl.style.backgroundColor = `rgba(${r}, ${g}, ${b}, 0.94)`;
+}
+
 const colorOptions = document.querySelectorAll('.color-option');
 colorOptions.forEach(option => {
     option.addEventListener('click', () => {
@@ -65,9 +77,11 @@ colorOptions.forEach(option => {
         option.classList.add('active');
         selectedSnakeColor = option.getAttribute('data-color');
         updateUsernamePreview();
+        updateStartScreenBackground(selectedSnakeColor);
     });
 });
 
+updateStartScreenBackground(selectedSnakeColor);
 initUsernameInputs();
 
 class Snake {
