@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Slither Prototip</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="start-screen">
+        <div class="start-content">
+            <h1>YILAN GİBİ</h1>
+            
+            <div class="section-title">Oda Seç (Gizli Oda)</div>
+            <input type="text" id="room-input" placeholder="Oda Adı Girin..." class="word-input" style="cursor: text; text-align: left; padding: 12px; margin-bottom: 20px;">
+            <p class="hint-text">Oda adını bilmeyenler giremez. İlk giren admin olur.</p>
+
+            <div class="section-title">Kullanıcı Adı Seç</div>
+            <div id="username-preview">Koca Mavi</div>
+            <p class="hint-text">Kutulara tıklayarak rastgele kelimeler üretebilir veya doğrudan düzenleyebilirsin.</p>
+            <div id="username-inputs">
+                <input type="text" id="word-input-1" class="word-input" readonly title="Tıkla ve değiştir">
+                <input type="text" id="word-input-2" class="word-input" readonly title="Tıkla ve değiştir">
+            </div>
+
+            <div class="section-title">Yılan Rengi / Deseni</div>
+            <div id="color-picker">
+                <div class="color-option active" data-color="#00ffcc" style="background: #00ffcc;" title="Neon Cyan"></div>
+                <div class="color-option" data-color="#ff3366" style="background: #ff3366;" title="Neon Pink"></div>
+                <div class="color-option" data-color="#33ff66" style="background: #33ff66;" title="Neon Lime"></div>
+                <div class="color-option" data-color="#ff9933" style="background: #ff9933;" title="Neon Orange"></div>
+                <div class="color-option" data-color="#ff33ff" style="background: #ff33ff;" title="Neon Purple"></div>
+                <div class="color-option" data-color="#ffff33" style="background: #ffff33;" title="Neon Yellow"></div>
+            </div>
+
+            <button id="start-btn">OYUNA BAŞLA</button>
+        </div>
+    </div>
+
+    <div id="score-board">
+        <div>Oyuncu: <span id="player-name-display">Yılan</span></div>
+        <div>Skor: <span id="score">15</span></div>
+        <div id="admin-controls" class="hidden">
+            <button id="close-room-btn" style="background: #ff3366; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; margin-top: 5px; font-size: 12px;">Odayı Kapat (Admin)</button>
+        </div>
+        <div id="leaderboard">
+            <div class="leaderboard-title">Sıralama</div>
+            <ol id="leaderboard-list"></ol>
+        </div>
+    </div>
+    <div id="game-over-screen" class="hidden">
+        <div class="game-over-content">
+            <h1>ÖLDÜN!</h1>
+            <p>Skorun: <span id="final-score">15</span></p>
+            <button id="restart-btn">Tekrar Oyna</button>
+        </div>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
