@@ -383,22 +383,88 @@ if (restartBtn) {
     });
 }
 
-// Input Handlers (kept from original)
-window.addEventListener('mousemove', (e) => {
-    if (!gameState.isStarted || !gameState.player) return;
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
-    const dx = e.clientX - centerX;
-    const dy = e.clientY - centerY;
+// Input Handlers
+function handleInput(clientX, clientY) {
+    if (!gameState.isStarted || !gameState.player || gameState.isGameOver) return;
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2;
+    const dx = clientX - centerX;
+    const dy = clientY - centerY;
     if (Math.hypot(dx, dy) > 10) {
         gameState.player.targetAngle = Math.atan2(dy, dx);
     }
+}
+
+window.addEventListener('mousemove', (e) => {
+    handleInput(e.clientX, e.clientY);
 });
 
-// Joystick and Boost handlers (simplified for brevity but functional)
-window.addEventListener('dblclick', () => {
-    if (gameState.player) gameState.player.triggerBoost();
+// Mobile Touch & Joystick
+window.addEventListener('touchstart', (e) => {
+    if (!gameState.isStarted || gameState.isGameOver) return;
+    const touch = e.touches[0];
+    gameState.input.joystick.active = true;
+    gameState.input.joystick.startX = touch.clientX;
+    gameState.input.joystick.startY = touch.clientY;
+    gameState.input.joystick.currentX = touch.clientX;
+    gameState.input.joystick.currentY = touch.clientY;
+    handleInput(touch.clientX, touch.clientY);
+}, { passive: false });
+
+window.addEventListener('touchmove', (e) => {
+    if (!gameState.isStarted || gameState.isGameOver) return;
+    e.preventDefault(); // Stop mobile scroll
+    const touch = e.touches[0];
+    if (gameState.input.joystick.active) {
+        gameState.input.joystick.currentX = touch.clientX;
+        gameState.input.joystick.currentY = touch.clientY;
+        
+        const dx = touch.clientX - gameState.input.joystick.startX;
+        const dy = touch.clientY - gameState.input.joystick.startY;
+        if (Math.hypot(dx, dy) > 5) {
+            gameState.player.targetAngle = Math.atan2(dy, dx);
+        }
+    }
+}, { passive: false });
+
+window.addEventListener('touchend', () => {
+    gameState.input.joystick.active = false;
 });
+
+// Double tap for boost on mobile
+let lastTouchTime = 0;
+window.addEventListener('touchstart', (e) => {
+    const now = Date.now();
+    if (now - lastTouchTime < 300) {
+        if (gameState.player) gameState.player.triggerBoost();
+    }
+    lastTouchTime = now;
+}, { passive: false });
+
+function drawJoystick() {
+    const j = gameState.input.joystick;
+    if (!j.active) return;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(j.startX, j.startY, 50, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 255, 204, 0.1)';
+    ctx.strokeStyle = 'rgba(0, 255, 204, 0.3)';
+    ctx.lineWidth = 2;
+    ctx.fill();
+    ctx.stroke();
+
+    const dx = j.currentX - j.startX;
+    const dy = j.currentY - j.startY;
+    const dist = Math.min(Math.hypot(dx, dy), 50);
+    const angle = Math.atan2(dy, dx);
+
+    ctx.beginPath();
+    ctx.arc(j.startX + Math.cos(angle) * dist, j.startY + Math.sin(angle) * dist, 25, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 255, 204, 0.4)';
+    ctx.fill();
+    ctx.restore();
+}
 
 function update() {
     if (!gameState.isStarted || gameState.isGameOver) return;
@@ -478,6 +544,7 @@ function draw() {
     }
     ctx.restore();
     if (gameState.isStarted) {
+        drawJoystick();
         drawMiniMap();
         updateLeaderboard();
     }
