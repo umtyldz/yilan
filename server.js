@@ -94,7 +94,7 @@ io.on('connection', (socket) => {
                 name: roomName,
                 adminId: socket.id,
                 players: new Map(),
-                foods: Array.from({ length: 400 }, spawnFood)
+                foods: Array.from({ length: 400 }, () => spawnFood())
             });
         }
 
