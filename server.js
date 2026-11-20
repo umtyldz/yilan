@@ -157,6 +157,9 @@ io.on('connection', (socket) => {
         const color = COLOR_RE.test(payload.color) ? payload.color : '#00ffcc';
         const food = spawnFood(x, y, 4, color);
         room.foods.push(food);
+        if (room.foods.length > 1000) {
+            room.foods.shift();
+        }
         io.to(roomName).emit('foodsAdded', [food]);
     });
 
@@ -207,6 +210,9 @@ io.on('connection', (socket) => {
                     }
                 }
                 if (added.length > 0) {
+                    while (room.foods.length > 1000) {
+                        room.foods.shift();
+                    }
                     io.to(roomName).emit('foodsAdded', added);
                 }
             }

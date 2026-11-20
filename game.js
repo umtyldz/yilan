@@ -129,9 +129,29 @@ function updateUsernamePreview() {
 }
 
 function initUsernameInputs() {
+    // URL parametresinden oda adı desteği (?oda=xxx veya ?room=xxx)
+    try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const roomParam = urlParams.get('oda') || urlParams.get('room');
+        if (roomParam && roomInput) {
+            roomInput.value = roomParam.trim();
+        }
+    } catch (e) {}
+
+    // Kayıtlı isim geri yükleme
+    const savedName = localStorage.getItem('slither_username');
+    if (savedName) {
+        const parts = savedName.split(' ');
+        if (parts[0] && wordInputs[0]) wordInputs[0].value = parts[0];
+        if (parts[1] && wordInputs[1]) wordInputs[1].value = parts.slice(1).join(' ');
+    } else {
+        wordInputs.forEach((input, index) => {
+            if (input) input.value = getRandomWordFromPool(index);
+        });
+    }
+
     wordInputs.forEach((input, index) => {
         if (input) {
-            input.value = getRandomWordFromPool(index);
             input.addEventListener('click', () => {
                 input.value = getRandomWordFromPool(index);
                 updateUsernamePreview();
@@ -139,6 +159,19 @@ function initUsernameInputs() {
             input.addEventListener('input', () => updateUsernamePreview());
         }
     });
+
+    // Kayıtlı renk geri yükleme
+    const savedColor = localStorage.getItem('slither_color');
+    if (savedColor) {
+        colorOptions.forEach(opt => {
+            if (opt.getAttribute('data-color') === savedColor) {
+                colorOptions.forEach(o => o.classList.remove('active'));
+                opt.classList.add('active');
+                selectedSnakeColor = savedColor;
+            }
+        });
+    }
+
     updateUsernamePreview();
 }
 
@@ -608,6 +641,8 @@ function die() {
 const restartBtn = document.getElementById('restart-btn');
 if (restartBtn) {
     restartBtn.addEventListener('click', () => {
+        const goScreen = document.getElementById('game-over-screen');
+        if (goScreen) goScreen.classList.add('hidden');
         joinGame();
     });
 }
