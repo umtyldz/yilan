@@ -1084,10 +1084,15 @@ function drawMiniMap() {
     const mapX = canvas.width - mapSize - 20;
     const mapY = 20;
     ctx.save();
+
+    // %10 opak zemin ve ince neon çerçeve
     ctx.beginPath();
     ctx.rect(mapX, mapY, mapSize, mapSize);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.10)';
     ctx.fill();
+    ctx.strokeStyle = 'rgba(0, 255, 204, 0.35)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
 
     const scale = mapSize / ARENA_WIDTH;
     const radarFoodRadiusSq = 1200 * 1200;
