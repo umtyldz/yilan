@@ -9,12 +9,32 @@ const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
 
-app.use(express.static(path.join(__dirname, './')));
+// Sadece istemci dosyalarını yayınla (server.js, package.json, .git, yedek/ gizli kalır)
+const PUBLIC_FILES = ['index.html', 'game.js', 'style.css'];
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+PUBLIC_FILES.forEach((file) => {
+    app.get('/' + file, (req, res) => res.sendFile(path.join(__dirname, file)));
+});
 
 const rooms = new Map();
 
 const ARENA_WIDTH = 5000;
 const ARENA_HEIGHT = 5000;
+const INITIAL_LENGTH = 15;
+const MAX_LENGTH = 2000;
+const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+
+function cleanStr(value, max) {
+    return String(value == null ? '' : value)
+        .replace(/[<>&"'`]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, max);
+}
+
+function isNum(n) {
+    return typeof n === 'number' && Number.isFinite(n);
+}
 
 function spawnFood() {
     return {
@@ -26,12 +46,49 @@ function spawnFood() {
     };
 }
 
+function leaveRoom(socket) {
+    const roomName = socket.data.room;
+    if (!roomName) return;
+    socket.leave(roomName);
+    socket.data.room = null;
+
+    const room = rooms.get(roomName);
+    if (!room) return;
+
+    room.players.delete(socket.id);
+    io.to(roomName).emit('playerRemoved', socket.id);
+
+    if (room.adminId === socket.id) {
+        const roomSockets = io.sockets.adapter.rooms.get(roomName);
+        if (room.players.size > 0) {
+            const nextAdminId = room.players.keys().next().value;
+            room.adminId = nextAdminId;
+            io.to(nextAdminId).emit('makeAdmin');
+        } else if (!roomSockets || roomSockets.size === 0) {
+            rooms.delete(roomName);
+        } else {
+            room.adminId = null; // oda boş, ilk giren yeniden admin olur
+        }
+    }
+}
+
 io.on('connection', (socket) => {
     console.log('Bir kullanıcı bağlandı:', socket.id);
+    socket.data.room = null;
 
-    socket.on('joinRoom', ({ roomName, playerName, color }) => {
+    socket.on('joinRoom', (payload) => {
+        if (!payload || typeof payload !== 'object') return;
+        const roomName = cleanStr(payload.roomName, 30);
+        const playerName = cleanStr(payload.playerName, 24) || 'Yılan';
+        const color = COLOR_RE.test(payload.color) ? payload.color : '#00ffcc';
+        if (!roomName) return;
+
+        // Daha önce bir odadaysa (ör. ölüp tekrar oynuyorsa) önce çık
+        leaveRoom(socket);
+
         socket.join(roomName);
-        
+        socket.data.room = roomName;
+
         if (!rooms.has(roomName)) {
             rooms.set(roomName, {
                 name: roomName,
@@ -42,22 +99,23 @@ io.on('connection', (socket) => {
         }
 
         const room = rooms.get(roomName);
+        if (!room.adminId) room.adminId = socket.id;
         const isAdmin = room.adminId === socket.id;
 
         const playerData = {
             id: socket.id,
             name: playerName,
             color: color,
-            x: ARENA_WIDTH / 2,
-            y: ARENA_HEIGHT / 2,
+            x: 500 + Math.random() * (ARENA_WIDTH - 1000),
+            y: 500 + Math.random() * (ARENA_HEIGHT - 1000),
             angle: 0,
-            segments: [], // Client will send initial segments
+            length: INITIAL_LENGTH,
+            isBoosting: false,
             isAdmin: isAdmin
         };
 
         room.players.set(socket.id, playerData);
 
-        // Send current room state to the joined player
         socket.emit('init', {
             id: socket.id,
             players: Array.from(room.players.values()),
@@ -66,41 +124,53 @@ io.on('connection', (socket) => {
             isAdmin: isAdmin
         });
 
-        // Notify others
         socket.to(roomName).emit('playerJoined', playerData);
     });
 
-    socket.on('updatePosition', ({ roomName, data }) => {
-        const room = rooms.get(roomName);
-        if (room && room.players.has(socket.id)) {
-            const player = room.players.get(socket.id);
-            Object.assign(player, data);
-            socket.to(roomName).emit('playerUpdated', player);
-        }
+    socket.on('updatePosition', ({ data } = {}) => {
+        const room = rooms.get(socket.data.room);
+        if (!room || !room.players.has(socket.id) || !data || typeof data !== 'object') return;
+
+        const player = room.players.get(socket.id);
+        // Sadece izin verilen alanları, doğrulayarak kabul et
+        if (isNum(data.x)) player.x = Math.max(0, Math.min(ARENA_WIDTH, data.x));
+        if (isNum(data.y)) player.y = Math.max(0, Math.min(ARENA_HEIGHT, data.y));
+        if (isNum(data.angle)) player.angle = data.angle;
+        if (isNum(data.length)) player.length = Math.max(1, Math.min(MAX_LENGTH, Math.floor(data.length)));
+        player.isBoosting = data.isBoosting === true;
+
+        socket.to(socket.data.room).emit('playerUpdated', player);
     });
 
-    socket.on('foodEaten', ({ roomName, foodId }) => {
+    socket.on('foodEaten', ({ foodId } = {}) => {
+        const roomName = socket.data.room;
         const room = rooms.get(roomName);
-        if (room) {
-            const foodIndex = room.foods.findIndex(f => f.id === foodId);
-            if (foodIndex !== -1) {
-                room.foods.splice(foodIndex, 1);
-                const newFood = spawnFood();
-                room.foods.push(newFood);
-                io.to(roomName).emit('foodUpdate', { eatenId: foodId, newFood: newFood });
-            }
-        }
+        if (!room || !room.players.has(socket.id)) return;
+
+        const player = room.players.get(socket.id);
+        const foodIndex = room.foods.findIndex((f) => f.id === foodId);
+        if (foodIndex === -1) return; // zaten yenmiş: tekrar sayılmaz
+
+        const food = room.foods[foodIndex];
+        if (Math.hypot(food.x - player.x, food.y - player.y) > 200) return; // çok uzaktan yeme = hile
+
+        room.foods.splice(foodIndex, 1);
+        const newFood = spawnFood();
+        room.foods.push(newFood);
+        io.to(roomName).emit('foodUpdate', { eatenId: foodId, newFood: newFood });
     });
 
-    socket.on('playerDied', ({ roomName }) => {
+    socket.on('playerDied', () => {
+        const roomName = socket.data.room;
         const room = rooms.get(roomName);
         if (room && room.players.has(socket.id)) {
+            room.players.delete(socket.id); // ölen oyuncu artık yeni girenlere gönderilmez
             socket.to(roomName).emit('playerRemoved', socket.id);
-            // Optionally drop food where player died
         }
     });
 
-    socket.on('closeRoom', (roomName) => {
+    socket.on('closeRoom', () => {
+        const roomName = socket.data.room;
         const room = rooms.get(roomName);
         if (room && room.adminId === socket.id) {
             io.to(roomName).emit('roomClosed');
@@ -109,24 +179,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnecting', () => {
-        for (const roomName of socket.rooms) {
-            if (rooms.has(roomName)) {
-                const room = rooms.get(roomName);
-                room.players.delete(socket.id);
-                io.to(roomName).emit('playerRemoved', socket.id);
-
-                if (room.adminId === socket.id) {
-                    // Admin left, assign new admin or close
-                    if (room.players.size > 0) {
-                        const nextAdminId = room.players.keys().next().value;
-                        room.adminId = nextAdminId;
-                        io.to(nextAdminId).emit('makeAdmin');
-                    } else {
-                        rooms.delete(roomName);
-                    }
-                }
-            }
-        }
+        leaveRoom(socket);
     });
 
     socket.on('disconnect', () => {
