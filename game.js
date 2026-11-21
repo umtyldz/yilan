@@ -148,9 +148,9 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-// Harita ölçüleri sunucuyla senkron: 10000 x 10000
-let ARENA_WIDTH = 10000;
-let ARENA_HEIGHT = 10000;
+// Harita ölçüleri sunucuyla senkron: 7000 x 7000 (%30 küçültüldü)
+let ARENA_WIDTH = 7000;
+let ARENA_HEIGHT = 7000;
 
 // Kelime havuzları
 const adjectivesPool = ["Güçlü", "Şirin", "Çılgın", "Hızlı", "Dev", "Minik", "Korkusuz", "Tatlı", "Akıllı", "Sevimli", "Deli", "Süper", "Mega", "Kral", "Şahane", "Fırtına", "Büyülü", "Gizemli", "Asi", "Mutlu", "Öfkeli", "Yetenekli", "Cesur", "Dahice", "Efsane", "Yıldızlı", "Kurnaz", "Çevik", "Karizmatik", "Zeki", "Dinamik", "Parlak", "Korkunç", "Mükemmel", "Şanslı", "Becerikli", "Zırhlı", "Uçan", "Kusursuz", "Eğlenceli"];
@@ -350,10 +350,10 @@ class Snake {
         let currentSpeed = isCurrentlyBoosting ? this.boostSpeed : this.speed;
         if (hasSpeedPower) currentSpeed *= 1.45;
 
-        // Boost sırasında yem bırakma
+        // Boost sırasında yem bırakma (daha yavaş azalması için 16 karede bir = eski hızın yarısı)
         if (isCurrentlyBoosting && this.isPlayer) {
             this.boostFrameCount++;
-            if (this.boostFrameCount >= 8) {
+            if (this.boostFrameCount >= 16) {
                 this.boostFrameCount = 0;
                 if (!hasSpeedPower) {
                     const dropped = this.segments.pop();
@@ -702,6 +702,9 @@ socket.on('playerJoined', (p) => {
 });
 
 socket.on('playerUpdated', (p) => {
+    // Kendi yılanımızın uzunluğunu kendi istemcimiz yönetir; sunucu güncellemesi istemci skorunu ezmesin
+    if (p.id === socket.id) return;
+
     const s = gameState.snakes.get(p.id);
     if (s) {
         s.targetAngle = p.angle;
@@ -764,7 +767,7 @@ socket.on('bountyRemoved', ({ bountyId }) => {
     if (index !== -1) gameState.bounties.splice(index, 1);
 });
 
-socket.on('foodUpdate', ({ eatenId, newFood }) => {
+socket.on('foodUpdate', ({ eatenId, newFood, eatenValue }) => {
     const index = gameState.foods.findIndex(f => f.id === eatenId);
     if (index !== -1) gameState.foods.splice(index, 1);
     if (newFood) gameState.foods.push(newFood);
@@ -1190,12 +1193,17 @@ function drawMiniMap() {
         ctx.fill();
     }
 
-    // 50-100 Puanlık Hazine Yemlerini radarda altın yıldız olarak göster
+    // 50-100 Puanlık Hazine Yemlerini radarda büyük altın flaş olarak göster (kolayca bulunabilmesi için)
     for (const bty of gameState.bounties) {
+        const pulse = (Math.sin(Date.now() / 100) + 1) / 2;
+        ctx.save();
         ctx.beginPath();
-        ctx.arc(mapX + bty.x * scale, mapY + bty.y * scale, 3.5, 0, Math.PI * 2);
+        ctx.arc(mapX + bty.x * scale, mapY + bty.y * scale, 4 + pulse * 2, 0, Math.PI * 2);
         ctx.fillStyle = '#ffcc00';
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = '#ffff00';
         ctx.fill();
+        ctx.restore();
     }
 
     // Yılanları çiz (Hayalet modundakiler radarda ASLA görünmez!)

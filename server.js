@@ -17,9 +17,9 @@ PUBLIC_FILES.forEach((file) => {
 
 const rooms = new Map();
 
-// Harita ölçüleri 2 katına çıkarıldı: 10000 x 10000
-const ARENA_WIDTH = 10000;
-const ARENA_HEIGHT = 10000;
+// Harita ölçüleri %30 azaltıldı: 7000 x 7000
+const ARENA_WIDTH = 7000;
+const ARENA_HEIGHT = 7000;
 const INITIAL_LENGTH = 15;
 const MAX_LENGTH = 3000;
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -138,7 +138,7 @@ setInterval(() => {
         }
 
         if (!room.bounties) room.bounties = [];
-        while (room.bounties.length < 3) {
+        while (room.bounties.length < 4) {
             room.bounties.push(spawnBounty());
         }
 
@@ -248,15 +248,15 @@ io.on('connection', (socket) => {
         socket.join(roomName);
         socket.data.room = roomName;
 
-        // 4 kat yem: 1600 yem
+        // Yem sayısı %50 artırıldı: 1600 -> 2400 yem
         if (!rooms.has(roomName)) {
             rooms.set(roomName, {
                 name: roomName,
                 adminId: socket.id,
                 players: new Map(),
-                foods: Array.from({ length: 1600 }, () => spawnFood()),
+                foods: Array.from({ length: 2400 }, () => spawnFood()),
                 powerUps: [spawnPowerUp(), spawnPowerUp(), spawnPowerUp()],
-                bounties: [spawnBounty(), spawnBounty(), spawnBounty()]
+                bounties: [spawnBounty(), spawnBounty(), spawnBounty(), spawnBounty()]
             });
         }
 
@@ -345,7 +345,7 @@ io.on('connection', (socket) => {
         room.foods.splice(foodIndex, 1);
         const newFood = spawnFood();
         room.foods.push(newFood);
-        io.to(roomName).emit('foodUpdate', { eatenId: foodId, newFood: newFood });
+        io.to(roomName).emit('foodUpdate', { eatenId: foodId, newFood: newFood, eatenValue: food.value || 1 });
     });
 
     socket.on('bountyEaten', ({ bountyId } = {}) => {
@@ -365,12 +365,12 @@ io.on('connection', (socket) => {
 
         // Birkaç saniye sonra yeni bir 50-100 puanlık yem doğur
         setTimeout(() => {
-            if (room && room.bounties && room.bounties.length < 3) {
+            if (room && room.bounties && room.bounties.length < 4) {
                 const nb = spawnBounty();
                 room.bounties.push(nb);
                 io.to(roomName).emit('bountiesSync', room.bounties);
             }
-        }, 4000);
+        }, 3000);
     });
 
     socket.on('powerUpCollected', ({ powerId } = {}) => {
