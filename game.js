@@ -59,6 +59,28 @@ function playEatSound() {
     } catch (e) {}
 }
 
+function playBountySound() {
+    if (!soundEnabled) return;
+    initAudio();
+    if (!audioCtx) return;
+    try {
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440, now);
+        osc.frequency.setValueAtTime(660, now + 0.08);
+        osc.frequency.setValueAtTime(880, now + 0.16);
+        osc.frequency.setValueAtTime(1100, now + 0.24);
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(now);
+        osc.stop(now + 0.35);
+    } catch (e) {}
+}
+
 function playPowerSound() {
     if (!soundEnabled) return;
     initAudio();
@@ -126,8 +148,9 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-let ARENA_WIDTH = 5000;
-let ARENA_HEIGHT = 5000;
+// Harita ölçüleri sunucuyla senkron: 10000 x 10000
+let ARENA_WIDTH = 10000;
+let ARENA_HEIGHT = 10000;
 
 // Kelime havuzları
 const adjectivesPool = ["Güçlü", "Şirin", "Çılgın", "Hızlı", "Dev", "Minik", "Korkusuz", "Tatlı", "Akıllı", "Sevimli", "Deli", "Süper", "Mega", "Kral", "Şahane", "Fırtına", "Büyülü", "Gizemli", "Asi", "Mutlu", "Öfkeli", "Yetenekli", "Cesur", "Dahice", "Efsane", "Yıldızlı", "Kurnaz", "Çevik", "Karizmatik", "Zeki", "Dinamik", "Parlak", "Korkunç", "Mükemmel", "Şanslı", "Becerikli", "Zırhlı", "Uçan", "Kusursuz", "Eğlenceli"];
@@ -276,17 +299,25 @@ class Snake {
 
     getCurrentRadius() {
         const isTitan = this.activePower === 'titan' && this.powerExpires > Date.now();
-        const base = this.baseRadius + Math.min(this.segments.length * 0.07, 18);
+        const base = this.baseRadius + Math.min(this.segments.length * 0.07, 24);
         return isTitan ? base * 1.8 : base;
     }
 
     setLength(n) {
-        n = Math.max(1, Math.min(Math.floor(n) || 1, 2000));
+        n = Math.max(1, Math.min(Math.floor(n) || 1, 3000));
         while (this.segments.length < n) {
             const t = this.segments[this.segments.length - 1];
             this.segments.push({ x: t.x, y: t.y });
         }
         while (this.segments.length > n) this.segments.pop();
+    }
+
+    addPoints(pts) {
+        pts = Math.max(1, Math.floor(pts));
+        for (let i = 0; i < pts; i++) {
+            const tail = this.segments[this.segments.length - 1];
+            this.segments.push({ x: tail.x, y: tail.y });
+        }
     }
 
     triggerBoost() {
@@ -317,9 +348,9 @@ class Snake {
 
         const isCurrentlyBoosting = this.isBoosting && this.segments.length > 15;
         let currentSpeed = isCurrentlyBoosting ? this.boostSpeed : this.speed;
-        if (hasSpeedPower) currentSpeed *= 1.45; // Turbo güç çarpanı
+        if (hasSpeedPower) currentSpeed *= 1.45;
 
-        // Boost sırasında yem bırakma (turbo gücündeyken kuyruk puanı eksilmez!)
+        // Boost sırasında yem bırakma
         if (isCurrentlyBoosting && this.isPlayer) {
             this.boostFrameCount++;
             if (this.boostFrameCount >= 8) {
@@ -375,9 +406,11 @@ class Snake {
     }
 
     draw(ctx) {
-        const currentRadius = this.getCurrentRadius();
+        const isGhost = this.activePower === 'ghost' && this.powerExpires > Date.now();
+        // Diğer oyuncular Hayalet gücündeki yılanı HİÇ GÖREMEZ. Hayalet olan oyuncu ise kendini silik (%20) görür!
+        if (isGhost && !this.isPlayer) return;
 
-        // Performans Culling
+        // Performans Culling: Ekran sınırları dışında kalan yılanları atla
         let isAnySegmentVisible = false;
         for (let i = 0; i < this.segments.length; i++) {
             const s = this.segments[i];
@@ -388,11 +421,11 @@ class Snake {
         }
         if (!isAnySegmentVisible) return;
 
-        const isGhost = this.activePower === 'ghost' && this.powerExpires > Date.now();
-        const baseAlpha = isGhost ? 0.22 : 1.0; // Hayalet modu kamuflajı
+        const currentRadius = this.getCurrentRadius();
+        const baseAlpha = isGhost ? 0.20 : 1.0;
 
         ctx.save();
-        ctx.shadowBlur = 8;
+        ctx.shadowBlur = isGhost ? 0 : 8;
         ctx.shadowColor = this.color;
         const rgb = this.hexToRgb(this.color);
 
@@ -448,7 +481,7 @@ class Snake {
 
             // Aktif Güç Geri Sayım Barı ve İsim
             if (this.activePower && this.powerExpires > Date.now()) {
-                const totalDur = { magnet: 10000, ghost: 6000, titan: 8000, speed: 6000 }[this.activePower] || 7000;
+                const totalDur = { magnet: 10000, ghost: 8000, titan: 8000, speed: 6000 }[this.activePower] || 7000;
                 const rem = Math.max(0, this.powerExpires - Date.now()) / totalDur;
                 const pColor = { magnet: '#ffff00', ghost: '#aa88ff', titan: '#ff3366', speed: '#00ffff' }[this.activePower] || '#fff';
                 const pEmoji = { magnet: '🧲', ghost: '👻', titan: '🍄', speed: '⚡' }[this.activePower] || '⭐';
@@ -473,7 +506,7 @@ class Snake {
             // İsim ve Avcı İkonu
             ctx.save();
             ctx.font = 'bold 12px Segoe UI';
-            ctx.fillStyle = '#ffffff';
+            ctx.fillStyle = `rgba(255, 255, 255, ${baseAlpha})`;
             ctx.textAlign = 'center';
             ctx.shadowBlur = 4;
             ctx.shadowColor = '#000000';
@@ -481,7 +514,7 @@ class Snake {
             ctx.fillText(this.name + killTag, head.x, head.y - currentRadius - 8);
             ctx.restore();
 
-            // Konuşma Balonu Çizimi (Büyük ve Net)
+            // Konuşma Balonu Çizimi
             if (this.chatMessage && this.chatTimer > Date.now()) {
                 this.drawChatBubble(ctx, head.x, head.y - currentRadius - 26);
             }
@@ -548,7 +581,7 @@ const gameState = {
     isDeadWatching: false,
     isRespawning: false,
     deathTime: 0,
-    deathCameraPos: { x: 2500, y: 2500 },
+    deathCameraPos: { x: 5000, y: 5000 },
     roomName: '',
     isAdmin: false,
     currentCameraScale: 1.0,
@@ -559,7 +592,8 @@ const gameState = {
         joystick: { active: false, identifier: null, startX: 0, startY: 0, currentX: 0, currentY: 0 }
     },
     foods: [],
-    powerUps: []
+    powerUps: [],
+    bounties: []
 };
 
 let joinInfo = null;
@@ -585,7 +619,7 @@ if (startBtn) {
         gameState.roomName = room;
         joinInfo = { roomName: room, playerName: finalName, color: selectedSnakeColor };
         
-        // İlk girişte geri sayım sayacı
+        // İlk girişte 5 saniyelik geri sayım sayacı
         gameState.isRespawning = true;
         gameState.player = null;
         const startScreen = document.getElementById('start-screen');
@@ -616,7 +650,7 @@ if (startBtn) {
     });
 }
 
-socket.on('init', ({ id, players, foods, powerUps, arena, isAdmin }) => {
+socket.on('init', ({ id, players, foods, powerUps, bounties, arena, isAdmin }) => {
     ARENA_WIDTH = arena.width;
     ARENA_HEIGHT = arena.height;
     gameState.snakes.clear();
@@ -634,6 +668,7 @@ socket.on('init', ({ id, players, foods, powerUps, arena, isAdmin }) => {
 
     gameState.foods = foods.slice();
     if (Array.isArray(powerUps)) gameState.powerUps = powerUps.slice();
+    if (Array.isArray(bounties)) gameState.bounties = bounties.slice();
 
     players.forEach(p => {
         const s = new Snake(p.id, p.x, p.y, p.id === id, p.color, p.name);
@@ -720,6 +755,15 @@ socket.on('powerUpsSync', (powerUps) => {
     if (Array.isArray(powerUps)) gameState.powerUps = powerUps;
 });
 
+socket.on('bountiesSync', (bounties) => {
+    if (Array.isArray(bounties)) gameState.bounties = bounties;
+});
+
+socket.on('bountyRemoved', ({ bountyId }) => {
+    const index = gameState.bounties.findIndex(b => b.id === bountyId);
+    if (index !== -1) gameState.bounties.splice(index, 1);
+});
+
 socket.on('foodUpdate', ({ eatenId, newFood }) => {
     const index = gameState.foods.findIndex(f => f.id === eatenId);
     if (index !== -1) gameState.foods.splice(index, 1);
@@ -791,18 +835,24 @@ function checkCollisions() {
     const prevHead = { x: gameState.player.prevX, y: gameState.player.prevY };
     const myRadius = gameState.player.getCurrentRadius();
 
-    // Duvar çarpışması
+    // 1. Kenarlara çarpma kontrolü (Kenara çarpınca da tam ölür ve yem döker!)
     const margin = 20;
     if (head.x <= margin || head.x >= ARENA_WIDTH - margin || head.y <= margin || head.y >= ARENA_HEIGHT - margin) {
         die(null);
         return;
     }
 
-    // Diğer yılanlarla çarpışma (koruma kalkanı yoksa)
-    const protectedNow = gameState.player.shieldUntil > Date.now();
+    const isGhost = gameState.player.activePower === 'ghost' && gameState.player.powerExpires > Date.now();
+    const protectedNow = (gameState.player.shieldUntil > Date.now()) || isGhost;
+
+    // 2. Diğer yılanlarla çarpışma (Hayalet modunda olan öldüremez ve ölemez!)
     if (!protectedNow) {
         for (const [id, snake] of gameState.snakes) {
             if (id === socket.id) continue;
+            // Rakip hayalet modundaysa ona çarpılamaz
+            const otherGhost = snake.activePower === 'ghost' && snake.powerExpires > Date.now();
+            if (otherGhost) continue;
+
             const otherRadius = snake.getCurrentRadius();
             const collisionThreshold = myRadius * 0.75 + otherRadius * 0.75;
 
@@ -821,7 +871,7 @@ function checkCollisions() {
         }
     }
 
-    // Güç Küresi Çarpışması
+    // 3. Güç Küresi Çarpışması
     for (let i = gameState.powerUps.length - 1; i >= 0; i--) {
         const pw = gameState.powerUps[i];
         const dist = Math.hypot(head.x - pw.x, head.y - pw.y);
@@ -831,30 +881,43 @@ function checkCollisions() {
         }
     }
 
-    // Yem Çarpışması & Manyetik Çekim
+    // 4. 50-100 Puanlık Kaçan Hazine Yemi Çarpışması
+    for (let i = gameState.bounties.length - 1; i >= 0; i--) {
+        const bty = gameState.bounties[i];
+        const dist = Math.hypot(head.x - bty.x, head.y - bty.y);
+        if (dist < myRadius + bty.radius + 6) {
+            const earned = bty.value;
+            gameState.bounties.splice(i, 1);
+            socket.emit('bountyEaten', { roomName: gameState.roomName, bountyId: bty.id });
+            gameState.player.addPoints(earned);
+            scoreEl.textContent = gameState.player.segments.length;
+            playBountySound();
+        }
+    }
+
+    // 5. Normal Yem Çarpışması & Manyetik Çekim
     const hasMagnet = gameState.player.activePower === 'magnet' && gameState.player.powerExpires > Date.now();
     for (let i = gameState.foods.length - 1; i >= 0; i--) {
         const food = gameState.foods[i];
         const dist = Math.hypot(head.x - food.x, head.y - food.y);
 
-        // Manyetik çekim etkisi
-        if (hasMagnet && dist < 320 && dist > myRadius) {
-            food.x += (head.x - food.x) * 0.15;
-            food.y += (head.y - food.y) * 0.15;
+        if (hasMagnet && dist < 360 && dist > myRadius) {
+            food.x += (head.x - food.x) * 0.16;
+            food.y += (head.y - food.y) * 0.16;
         }
 
         if (dist < myRadius + food.radius) {
+            const val = food.value || 1;
             gameState.foods.splice(i, 1);
             socket.emit('foodEaten', { roomName: gameState.roomName, foodId: food.id });
-            const tail = gameState.player.segments[gameState.player.segments.length - 1];
-            gameState.player.segments.push({ x: tail.x, y: tail.y });
+            gameState.player.addPoints(val);
             scoreEl.textContent = gameState.player.segments.length;
             playEatSound();
         }
     }
 }
 
-// Ölüm ve 3-4 saniyelik gecikmeli yas ekranı
+// Ölüm mekaniği: Yılanın skorunun 3 katı yem düşer, tam boyunda ve eşit dağılır!
 function die(killerId) {
     if (gameState.isGameOver || gameState.isDeadWatching) return;
     gameState.isDeadWatching = true;
@@ -864,16 +927,31 @@ function die(killerId) {
     if (deathVignette) deathVignette.classList.remove('hidden');
     if (emojiBar) emojiBar.classList.add('hidden');
 
-    // Kamera ölüm noktasında kalsın
     if (gameState.player) {
         gameState.deathCameraPos = { x: gameState.player.x, y: gameState.player.y };
     }
 
     const drops = [];
     if (gameState.player && gameState.player.segments) {
-        const step = Math.max(1, Math.floor(gameState.player.segments.length / 40));
-        for (let i = 0; i < gameState.player.segments.length; i += step) {
-            drops.push({ x: gameState.player.segments[i].x, y: gameState.player.segments[i].y });
+        const segs = gameState.player.segments;
+        const totalLen = segs.length;
+        // Yılanın skorunun 3 katı yem havuzu
+        const totalFoodTarget = totalLen * 3;
+        const dropRadius = Math.max(6, Math.min(18, gameState.player.getCurrentRadius() * 0.85));
+
+        // Segmentler boyunca eşit dağılım
+        const dropsCount = Math.min(totalFoodTarget, 240);
+        const valuePerDrop = Math.max(1, Math.round(totalFoodTarget / dropsCount));
+
+        for (let i = 0; i < dropsCount; i++) {
+            const segIndex = Math.floor((i / dropsCount) * totalLen);
+            const seg = segs[segIndex] || segs[0];
+            drops.push({
+                x: seg.x + (Math.random() - 0.5) * 16,
+                y: seg.y + (Math.random() - 0.5) * 16,
+                value: valuePerDrop,
+                radius: dropRadius
+            });
         }
     }
 
@@ -886,11 +964,10 @@ function die(killerId) {
     const finalLen = gameState.player ? gameState.player.segments.length : 15;
     const finalKills = gameState.player ? gameState.player.kills : 0;
 
-    // Yılan anında yok olsun (yem dökme aynen kalır, kamera ölüm noktasını izlemeye devam eder)
+    // Yılan anında yok olur (yemler kalır, kamera ölüm noktasını izler)
     gameState.snakes.delete(socket.id);
     gameState.player = null;
 
-    // 3.5 saniye boyunca oyuncu ölüm noktasını ve etraftaki yemleri izlesin, sonra menü açılsın
     setTimeout(() => {
         if (!gameState.isDeadWatching) return;
         gameState.isDeadWatching = false;
@@ -905,7 +982,6 @@ function die(killerId) {
     }, 3500);
 }
 
-// Avcı skoruna göre dinamik yeniden doğma süresi hesaplama
 function calculateRespawnDelay() {
     const myKills = (gameState.player && gameState.player.kills) || 0;
     const allKills = Array.from(gameState.snakes.values()).map(s => s.kills || 0).sort((a, b) => a - b);
@@ -914,7 +990,6 @@ function calculateRespawnDelay() {
         median = allKills[Math.floor(allKills.length / 2)];
     }
 
-    // Usta avcılar (medyan üstü): 3-4 saniye, düşük/yeni girenler: 7-8 saniye
     if (myKills > median + 2) return 3;
     if (myKills > median) return 4;
     if (myKills === median && myKills > 0) return 5;
@@ -929,7 +1004,6 @@ if (restartBtn) {
         if (gameOverScreen) gameOverScreen.classList.add('hidden');
         if (deathVignette) deathVignette.classList.add('hidden');
 
-        // Sayaca geçerken eski yılan referansını temizle ve respawning durumuna geç
         gameState.isRespawning = true;
         gameState.player = null;
 
@@ -986,7 +1060,7 @@ window.addEventListener('mousedown', (e) => {
 });
 
 window.addEventListener('keydown', (e) => {
-    if (e.code === 'Space' && gameState.player && !gameState.isDeadWatching) {
+    if (e.code === 'Space' && gameState.player && !gameState.isDeadWatching && !gameState.isRespawning) {
         gameState.player.triggerBoost();
     }
 });
@@ -1095,8 +1169,9 @@ function drawMiniMap() {
     ctx.stroke();
 
     const scale = mapSize / ARENA_WIDTH;
-    const radarFoodRadiusSq = 1200 * 1200;
+    const radarFoodRadiusSq = 1800 * 1800; // Genişletilmiş harita için 1800px
 
+    // Radarda sadece yakındaki yemler
     for (let i = 0; i < gameState.foods.length; i++) {
         const food = gameState.foods[i];
         const dx = food.x - camX;
@@ -1111,11 +1186,19 @@ function drawMiniMap() {
     for (const pw of gameState.powerUps) {
         ctx.beginPath();
         ctx.arc(mapX + pw.x * scale, mapY + pw.y * scale, 3, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffff00';
+        ctx.fillStyle = '#00ffcc';
         ctx.fill();
     }
 
-    // Yılanları çiz (Hayalet modundakiler radarda görünmez!)
+    // 50-100 Puanlık Hazine Yemlerini radarda altın yıldız olarak göster
+    for (const bty of gameState.bounties) {
+        ctx.beginPath();
+        ctx.arc(mapX + bty.x * scale, mapY + bty.y * scale, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffcc00';
+        ctx.fill();
+    }
+
+    // Yılanları çiz (Hayalet modundakiler radarda ASLA görünmez!)
     for (const [id, snake] of gameState.snakes) {
         const isGhost = snake.activePower === 'ghost' && snake.powerExpires > Date.now();
         if (isGhost && !snake.isPlayer) continue;
@@ -1173,17 +1256,17 @@ function draw() {
     let targetScale = 1.0;
     if (gameState.player) {
         const pRadius = gameState.player.getCurrentRadius();
-        targetScale = Math.max(0.65, Math.min(1.0, 11 / pRadius));
+        targetScale = Math.max(0.60, Math.min(1.0, 11 / pRadius));
     }
     gameState.currentCameraScale += (targetScale - gameState.currentCameraScale) * 0.05;
     const scale = gameState.currentCameraScale;
 
     const halfW = (canvas.width / 2) / scale;
     const halfH = (canvas.height / 2) / scale;
-    view.l = camX - halfW - 80;
-    view.r = camX + halfW + 80;
-    view.t = camY - halfH - 80;
-    view.b = camY + halfH + 80;
+    view.l = camX - halfW - 100;
+    view.r = camX + halfW + 100;
+    view.t = camY - halfH - 100;
+    view.b = camY + halfH + 100;
 
     ctx.save();
     ctx.translate(canvas.width / 2, canvas.height / 2);
@@ -1193,19 +1276,59 @@ function draw() {
     drawGrid();
 
     ctx.strokeStyle = '#ff3333';
-    ctx.lineWidth = 12;
+    ctx.lineWidth = 14;
     ctx.strokeRect(0, 0, ARENA_WIDTH, ARENA_HEIGHT);
 
-    // Yemleri çiz
-    for (const food of gameState.foods) {
+    // 1. Sadece ekrandaki yemleri çiz (Frustum Culling - 0 Lag!)
+    for (let i = 0; i < gameState.foods.length; i++) {
+        const food = gameState.foods[i];
+        // Görüş alanı dışındaysa kesinlikle çizme
         if (food.x < view.l || food.x > view.r || food.y < view.t || food.y > view.b) continue;
+
         ctx.beginPath();
         ctx.arc(food.x, food.y, food.radius, 0, Math.PI * 2);
         ctx.fillStyle = food.color;
         ctx.fill();
+
+        // 5 ve 7 puanlık yemlere özel neon ışıltı
+        if (food.value >= 5) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(food.x, food.y, food.radius * 0.5, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+            ctx.restore();
+        }
     }
 
-    // Hareketli Güç Kürelerini Çiz (Süzülen neon küreler)
+    // 2. 50-100 Puanlık Kaçan Hazine Yemlerini Çiz
+    for (let i = 0; i < gameState.bounties.length; i++) {
+        const bty = gameState.bounties[i];
+        if (bty.x < view.l || bty.x > view.r || bty.y < view.t || bty.y > view.b) continue;
+
+        const pulse = (Math.sin(Date.now() / 120) + 1) / 2;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(bty.x, bty.y, bty.radius + pulse * 4, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255, 204, 0, 0.9)';
+        ctx.shadowBlur = 18;
+        ctx.shadowColor = '#ffcc00';
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+
+        // Üzerinde puanı yazsın
+        ctx.font = 'bold 12px Segoe UI';
+        ctx.fillStyle = '#08080c';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowBlur = 0;
+        ctx.fillText(bty.value, bty.x, bty.y);
+        ctx.restore();
+    }
+
+    // 3. Hareketli Güç Kürelerini Çiz
     const pwEmojis = { magnet: '🧲', ghost: '👻', titan: '🍄', speed: '⚡' };
     const pwColors = { magnet: '#ffff00', ghost: '#aa88ff', titan: '#ff3366', speed: '#00ffff' };
     for (const pw of gameState.powerUps) {
@@ -1232,7 +1355,7 @@ function draw() {
         ctx.restore();
     }
 
-    // Yılanları çiz
+    // 4. Yılanları çiz
     for (const [id, snake] of gameState.snakes) {
         snake.draw(ctx);
     }
@@ -1272,14 +1395,12 @@ function initEmojiBar() {
     if (!bar) return;
     bar.innerHTML = '';
 
-    // Emoji panelindeki tıklama ve dokunmaların yılanı yönlendirmesini kesin olarak engelle
     ['mousedown', 'touchstart', 'pointerdown', 'mousemove', 'touchmove'].forEach(evt => {
         bar.addEventListener(evt, (e) => {
             e.stopPropagation();
         }, { passive: false });
     });
 
-    // Masaüstünde fare tekerleğiyle yatay kaydırma
     bar.addEventListener('wheel', (e) => {
         e.stopPropagation();
         e.preventDefault();
