@@ -884,7 +884,7 @@ function checkCollisions() {
         }
     }
 
-    // 4. 50-100 Puanlık Kaçan Hazine Yemi Çarpışması
+    // 4. 20-50 Puanlık Kaçan Hazine Yemi Çarpışması
     for (let i = gameState.bounties.length - 1; i >= 0; i--) {
         const bty = gameState.bounties[i];
         const dist = Math.hypot(head.x - bty.x, head.y - bty.y);
@@ -1193,7 +1193,7 @@ function drawMiniMap() {
         ctx.fill();
     }
 
-    // 50-100 Puanlık Hazine Yemlerini radarda büyük altın flaş olarak göster (kolayca bulunabilmesi için)
+    // 20-50 Puanlık Hazine Yemlerini radarda büyük altın flaş olarak göster (kolayca bulunabilmesi için)
     for (const bty of gameState.bounties) {
         const pulse = (Math.sin(Date.now() / 100) + 1) / 2;
         ctx.save();
@@ -1309,7 +1309,7 @@ function draw() {
         }
     }
 
-    // 2. 50-100 Puanlık Kaçan Hazine Yemlerini Çiz
+    // 2. 20-50 Puanlık Kaçan Hazine Yemlerini Çiz
     for (let i = 0; i < gameState.bounties.length; i++) {
         const bty = gameState.bounties[i];
         if (bty.x < view.l || bty.x > view.r || bty.y < view.t || bty.y > view.b) continue;

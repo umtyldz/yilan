@@ -70,17 +70,44 @@ function spawnFood(customX, customY, customValue, customRadius, customColor) {
     };
 }
 
-// 50 - 100 puanlık hareketli kaçan hazine yemleri
-function spawnBounty() {
-    const value = Math.floor(50 + Math.random() * 51); // 50 - 100 puan
+// 20 - 50 puanlık hareketli kaçan hazine yemleri
+function spawnBounty(existingList = []) {
+    const value = Math.floor(20 + Math.random() * 31); // 20 - 50 puan
+    const valRatio = (value - 20) / 30; // 0..1 (20 puan = 0, 50 puan = 1)
     const angle = Math.random() * Math.PI * 2;
-    const baseSpeed = 1.6 + ((value - 50) / 50) * 1.2; // 50 puan -> 1.6 hız, 100 puan -> 2.8 hız
+    const baseSpeed = 2.0 + valRatio * 0.6; // 2.0 (20 pt) - 2.6 (50 pt)
+
+    let bx = 500 + Math.random() * (ARENA_WIDTH - 1000);
+    let by = 500 + Math.random() * (ARENA_HEIGHT - 1000);
+    if (existingList && existingList.length > 0) {
+        let maxDist = 0;
+        for (let att = 0; att < 30; att++) {
+            const cx = 500 + Math.random() * (ARENA_WIDTH - 1000);
+            const cy = 500 + Math.random() * (ARENA_HEIGHT - 1000);
+            let minDist = 99999;
+            for (const b of existingList) {
+                const d = Math.hypot(cx - b.x, cy - b.y);
+                if (d < minDist) minDist = d;
+            }
+            if (minDist > 2800) {
+                bx = cx;
+                by = cy;
+                break;
+            }
+            if (minDist > maxDist) {
+                maxDist = minDist;
+                bx = cx;
+                by = cy;
+            }
+        }
+    }
+
     return {
         id: 'bty_' + Math.random().toString(36).substr(2, 9),
-        x: 300 + Math.random() * (ARENA_WIDTH - 600),
-        y: 300 + Math.random() * (ARENA_HEIGHT - 600),
+        x: bx,
+        y: by,
         value: value,
-        radius: 12 + ((value - 50) / 50) * 6, // 12px - 18px boyut
+        radius: 11 + valRatio * 5, // 11px - 16px boyut
         vx: Math.cos(angle) * baseSpeed,
         vy: Math.sin(angle) * baseSpeed,
         baseSpeed: baseSpeed
@@ -88,15 +115,39 @@ function spawnBounty() {
 }
 
 const POWER_TYPES = ['magnet', 'ghost', 'titan', 'speed'];
-function spawnPowerUp() {
+function spawnPowerUp(existingList = []) {
+    let bestX = 500 + Math.random() * (ARENA_WIDTH - 1000);
+    let bestY = 500 + Math.random() * (ARENA_HEIGHT - 1000);
+    let maxMinDist = 0;
+
+    for (let attempt = 0; attempt < 50; attempt++) {
+        const cx = 500 + Math.random() * (ARENA_WIDTH - 1000);
+        const cy = 500 + Math.random() * (ARENA_HEIGHT - 1000);
+        let minDist = 99999;
+        for (const pw of existingList) {
+            const d = Math.hypot(cx - pw.x, cy - pw.y);
+            if (d < minDist) minDist = d;
+        }
+        if (minDist > 2200) {
+            bestX = cx;
+            bestY = cy;
+            break;
+        }
+        if (minDist > maxMinDist) {
+            maxMinDist = minDist;
+            bestX = cx;
+            bestY = cy;
+        }
+    }
+
     const type = POWER_TYPES[Math.floor(Math.random() * POWER_TYPES.length)];
     const angle = Math.random() * Math.PI * 2;
-    const speed = 2.5 + Math.random() * 1.5;
+    const speed = 2.0 + Math.random() * 1.0;
     return {
         id: 'pw_' + Math.random().toString(36).substr(2, 9),
         type: type,
-        x: 300 + Math.random() * (ARENA_WIDTH - 600),
-        y: 300 + Math.random() * (ARENA_HEIGHT - 600),
+        x: bestX,
+        y: bestY,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed,
         radius: 13
@@ -129,22 +180,41 @@ function leaveRoom(socket) {
     }
 }
 
-// Power-up ve 50-100 Puanlık Kaçan Hazine Yemleri Hareket Döngüsü
+// Power-up (4 adet, birbirinden uzak) ve 20-50 Puanlık Kaçan Hazine Yemleri (2 adet) Hareket Döngüsü
 setInterval(() => {
     rooms.forEach((room, roomName) => {
         if (!room.powerUps) room.powerUps = [];
-        while (room.powerUps.length < 3) {
-            room.powerUps.push(spawnPowerUp());
+        while (room.powerUps.length < 4) {
+            room.powerUps.push(spawnPowerUp(room.powerUps));
         }
 
         if (!room.bounties) room.bounties = [];
-        while (room.bounties.length < 4) {
-            room.bounties.push(spawnBounty());
+        while (room.bounties.length < 2) {
+            room.bounties.push(spawnBounty(room.bounties));
         }
 
         const playersArr = Array.from(room.players.values());
 
-        // 1. Power-up kaçış döngüsü
+        // 1. Power-up kaçış ve birbirinden uzak durma döngüsü
+        // A) Birbirlerini itme (haritada birbirlerinden uzak durmaları için)
+        for (let i = 0; i < room.powerUps.length; i++) {
+            for (let j = i + 1; j < room.powerUps.length; j++) {
+                const p1 = room.powerUps[i];
+                const p2 = room.powerUps[j];
+                const pdx = p1.x - p2.x;
+                const pdy = p1.y - p2.y;
+                const pdist = Math.hypot(pdx, pdy);
+                if (pdist < 1800 && pdist > 1) {
+                    const repForce = ((1800 - pdist) / 1800) * 0.4;
+                    p1.vx += (pdx / pdist) * repForce;
+                    p1.vy += (pdy / pdist) * repForce;
+                    p2.vx -= (pdx / pdist) * repForce;
+                    p2.vy -= (pdy / pdist) * repForce;
+                }
+            }
+        }
+
+        // B) Yılanlardan kaçış
         for (const pw of room.powerUps) {
             for (const p of playersArr) {
                 const dx = pw.x - p.x;
@@ -156,13 +226,13 @@ setInterval(() => {
                 }
             }
             const spd = Math.hypot(pw.vx, pw.vy);
-            if (spd > 5.0) {
-                pw.vx = (pw.vx / spd) * 5.0;
-                pw.vy = (pw.vy / spd) * 5.0;
-            } else if (spd < 1.8) {
+            if (spd > 4.5) {
+                pw.vx = (pw.vx / spd) * 4.5;
+                pw.vy = (pw.vy / spd) * 4.5;
+            } else if (spd < 1.6) {
                 const ang = Math.atan2(pw.vy, pw.vx) || (Math.random() * Math.PI * 2);
-                pw.vx = Math.cos(ang) * 2.2;
-                pw.vy = Math.sin(ang) * 2.2;
+                pw.vx = Math.cos(ang) * 2.0;
+                pw.vy = Math.sin(ang) * 2.0;
             }
             pw.x += pw.vx;
             pw.y += pw.vy;
@@ -175,7 +245,24 @@ setInterval(() => {
             if (pw.y > ARENA_HEIGHT - 100) { pw.y = ARENA_HEIGHT - 100; pw.vy = -Math.abs(pw.vy); }
         }
 
-        // 2. 50-100 Puanlık Kaçan Hazine Yemleri Döngüsü
+        // 2. 20-50 Puanlık Kaçan Hazine Yemleri Döngüsü (2 adet)
+        // A) İki hazine yeminin birbirine çok yaklaşmasını engelle
+        if (room.bounties.length >= 2) {
+            const b1 = room.bounties[0];
+            const b2 = room.bounties[1];
+            const bdx = b1.x - b2.x;
+            const bdy = b1.y - b2.y;
+            const bdist = Math.hypot(bdx, bdy);
+            if (bdist < 2200 && bdist > 1) {
+                const rep = ((2200 - bdist) / 2200) * 0.3;
+                b1.vx += (bdx / bdist) * rep;
+                b1.vy += (bdy / bdist) * rep;
+                b2.vx -= (bdx / bdist) * rep;
+                b2.vy -= (bdy / bdist) * rep;
+            }
+        }
+
+        // B) Yılanın hızına göre kaçış: Normal hızda yakalanamaz (hız > 2.6), boost (hız 5.0) ile yakalanabilir
         for (const bty of room.bounties) {
             let maxThreatSpeed = 0;
             let nearestDist = 9999;
@@ -186,7 +273,7 @@ setInterval(() => {
                 const dx = bty.x - p.x;
                 const dy = bty.y - p.y;
                 const dist = Math.hypot(dx, dy);
-                if (dist < 500 && dist > 1) {
+                if (dist < 550 && dist > 1) {
                     if (dist < nearestDist) {
                         nearestDist = dist;
                         escapeDx = dx / dist;
@@ -196,25 +283,37 @@ setInterval(() => {
                 }
             }
 
+            const valRatio = ((bty.value || 30) - 20) / 30; // 0..1
+
             // Yaklaşan yılanın hızına göre kaçış ivmesi
-            if (nearestDist < 500) {
-                const urgency = 1 - (nearestDist / 500);
-                const threatMultiplier = maxThreatSpeed > 3.0 ? 1.6 : 1.0;
-                const agility = 0.35 + ((bty.value - 50) / 50) * 0.35; // Yüksek puan daha çevik kaçar
+            if (nearestDist < 550) {
+                const urgency = 1 - (nearestDist / 550);
+                const threatMultiplier = maxThreatSpeed > 3.0 ? 1.4 : 1.0;
+                const agility = 0.4 + valRatio * 0.35; // Yüksek puanlı biraz daha çevik
                 bty.vx += escapeDx * urgency * agility * threatMultiplier;
                 bty.vy += escapeDy * urgency * agility * threatMultiplier;
             }
 
-            // Hız sınırlandırması: Yüksek puanlılar biraz daha hızlı kaçabilir ama yakalanması imkansız olmaz
-            const maxSpd = bty.baseSpeed * (maxThreatSpeed > 3.0 ? 1.5 : 1.15);
+            // Hız sınırlandırması:
+            // Normal yılan (2.6) kovalıyorsa: 2.85 - 3.20 (yılan yetişemez, kaçar)
+            // Yılan boost yapıyorsa (5.0): 3.80 - 4.20 (yılan 5.0 hızla arayı kapatıp yakalayabilir)
+            let maxSpd = bty.baseSpeed;
+            if (nearestDist < 550) {
+                if (maxThreatSpeed > 3.0) {
+                    maxSpd = 3.8 + valRatio * 0.40; // 3.8 (20 pt) - 4.2 (50 pt)
+                } else {
+                    maxSpd = 2.85 + valRatio * 0.35; // 2.85 (20 pt) - 3.2 (50 pt)
+                }
+            }
+
             const curSpd = Math.hypot(bty.vx, bty.vy);
             if (curSpd > maxSpd) {
                 bty.vx = (bty.vx / curSpd) * maxSpd;
                 bty.vy = (bty.vy / curSpd) * maxSpd;
-            } else if (curSpd < 1.0) {
+            } else if (curSpd < 1.2) {
                 const ang = Math.atan2(bty.vy, bty.vx) || (Math.random() * Math.PI * 2);
-                bty.vx = Math.cos(ang) * 1.5;
-                bty.vy = Math.sin(ang) * 1.5;
+                bty.vx = Math.cos(ang) * 1.6;
+                bty.vy = Math.sin(ang) * 1.6;
             }
 
             bty.x += bty.vx;
@@ -249,14 +348,24 @@ io.on('connection', (socket) => {
         socket.data.room = roomName;
 
         // Yem sayısı %50 artırıldı: 1600 -> 2400 yem
+        // 4 adet büyü küresi (birbirinden uzak), 2 adet kaçan hazine yemi (20-50 puan)
         if (!rooms.has(roomName)) {
+            const initialPowers = [];
+            for (let i = 0; i < 4; i++) {
+                initialPowers.push(spawnPowerUp(initialPowers));
+            }
+            const initialBounties = [];
+            for (let i = 0; i < 2; i++) {
+                initialBounties.push(spawnBounty(initialBounties));
+            }
+
             rooms.set(roomName, {
                 name: roomName,
                 adminId: socket.id,
                 players: new Map(),
                 foods: Array.from({ length: 2400 }, () => spawnFood()),
-                powerUps: [spawnPowerUp(), spawnPowerUp(), spawnPowerUp()],
-                bounties: [spawnBounty(), spawnBounty(), spawnBounty(), spawnBounty()]
+                powerUps: initialPowers,
+                bounties: initialBounties
             });
         }
 
@@ -363,10 +472,10 @@ io.on('connection', (socket) => {
         room.bounties.splice(index, 1);
         io.to(roomName).emit('bountyRemoved', { bountyId: bountyId });
 
-        // Birkaç saniye sonra yeni bir 50-100 puanlık yem doğur
+        // Birkaç saniye sonra yeni bir 20-50 puanlık yem doğur
         setTimeout(() => {
-            if (room && room.bounties && room.bounties.length < 4) {
-                const nb = spawnBounty();
+            if (room && room.bounties && room.bounties.length < 2) {
+                const nb = spawnBounty(room.bounties);
                 room.bounties.push(nb);
                 io.to(roomName).emit('bountiesSync', room.bounties);
             }
@@ -399,8 +508,8 @@ io.on('connection', (socket) => {
         });
 
         setTimeout(() => {
-            if (room && room.powerUps && room.powerUps.length < 3) {
-                room.powerUps.push(spawnPowerUp());
+            if (room && room.powerUps && room.powerUps.length < 4) {
+                room.powerUps.push(spawnPowerUp(room.powerUps));
             }
         }, 4000);
     });
